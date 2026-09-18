@@ -1,0 +1,642 @@
+{
+  "id": "metacognitive_executive_architecture",
+  "name": "Metacognitive Executive Architecture (MEA)",
+  "uuid": "7e2a9b31-48d6-4e5a-938b-d72b260b51a2",
+  "emoji": "🧠",
+  "title": "Metacognitive Executive Architecture (MEA)",
+  "author": "Isaiah DePorto & Cognitive Systems Architecture",
+  "iconURL": "https://api.iconify.design/lucide:brain-circuit.svg",
+  "version": "1.0.0",
+  "icon_url": "https://api.iconify.design/lucide:brain-circuit.svg",
+  "functions": [
+    {
+      "id": "fn_manage_cognitive_workspace",
+      "code": "async function manage_cognitive_workspace(params, userSettings, resources) {\n  const { \n    action = 'update', \n    macro_goal, \n    active_subtask, \n    boundary_constraints = [], \n    active_hypothesis, \n    falsification_check, \n    branch_id = 'main', \n    parent_branch_id = null,\n    branch_eval_score = 1.0,\n    sync_to_workspace = true \n  } = params;\n\n  let state = await storage.get('workspace_state') || {\n    macro_goal: '',\n    active_subtask: '',\n    boundary_constraints: [],\n    active_hypothesis: '',\n    falsification_check: '',\n    branches: {\n      'main': { id: 'main', parent: null, hypothesis: '', status: 'active', score: 1.0, history: [] }\n    },\n    active_branch: 'main',\n    updated_at: new Date().toISOString()\n  };\n\n  if (action === 'read') {\n    return JSON.stringify({ status: 'success', current_workspace: state }, null, 2);\n  }\n\n  if (macro_goal) state.macro_goal = macro_goal;\n  if (active_subtask) state.active_subtask = active_subtask;\n  if (boundary_constraints && boundary_constraints.length > 0) state.boundary_constraints = boundary_constraints;\n  if (active_hypothesis) state.active_hypothesis = active_hypothesis;\n  if (falsification_check) state.falsification_check = falsification_check;\n\n  if (action === 'fork_branch') {\n    const newBranchId = branch_id || ('branch_' + Date.now());\n    state.branches[newBranchId] = {\n      id: newBranchId,\n      parent: parent_branch_id || state.active_branch,\n      hypothesis: active_hypothesis || '',\n      status: 'exploring',\n      score: branch_eval_score,\n      created_at: new Date().toISOString()\n    };\n    state.active_branch = newBranchId;\n  } else if (action === 'prune_branch') {\n    if (state.branches[branch_id]) {\n      state.branches[branch_id].status = 'pruned_dead_end';\n      state.branches[branch_id].pruned_at = new Date().toISOString();\n      if (state.active_branch === branch_id) {\n        state.active_branch = state.branches[branch_id].parent || 'main';\n      }\n    }\n  } else {\n    if (!state.branches[branch_id]) {\n      state.branches[branch_id] = { id: branch_id, parent: null, status: 'active', score: 1.0 };\n    }\n    state.branches[branch_id].hypothesis = active_hypothesis || state.branches[branch_id].hypothesis;\n    state.branches[branch_id].score = branch_eval_score;\n    state.active_branch = branch_id;\n  }\n\n  state.updated_at = new Date().toISOString();\n  await storage.set('workspace_state', state);\n\n  let workspaceFileNote = '';\n  if (sync_to_workspace && workspace && workspace.saveData) {\n    try {\n      const fileRes = await workspace.saveData('cognitive_workspace', state, 'json');\n      workspaceFileNote = ' Synchronized to ' + fileRes.relativePath + '.';\n    } catch (e) {}\n  }\n\n  return JSON.stringify({\n    status: 'success',\n    message: 'Cognitive workspace updated successfully.' + workspaceFileNote,\n    active_branch: state.active_branch,\n    active_subtask: state.active_subtask,\n    boundary_constraints: state.boundary_constraints,\n    falsification_check: state.falsification_check\n  }, null, 2);\n}",
+      "name": "Manage Cognitive Workspace",
+      "openaiSpec": {
+        "name": "manage_cognitive_workspace",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "update",
+                "read",
+                "fork_branch",
+                "prune_branch"
+              ],
+              "type": "string",
+              "description": "Action: update (default), read, fork_branch, or prune_branch."
+            },
+            "branch_id": {
+              "type": "string",
+              "description": "Identifier for the active reasoning branch (defaults to main)."
+            },
+            "macro_goal": {
+              "type": "string",
+              "description": "The overarching macro objective."
+            },
+            "active_subtask": {
+              "type": "string",
+              "description": "The immediate operational subtask."
+            },
+            "parent_branch_id": {
+              "type": "string",
+              "description": "Parent branch ID when forking."
+            },
+            "active_hypothesis": {
+              "type": "string",
+              "description": "The active hypothesis or approach being verified."
+            },
+            "branch_eval_score": {
+              "type": "number",
+              "description": "Self-evaluation score (0.0 to 1.0) for this reasoning branch against constraints."
+            },
+            "sync_to_workspace": {
+              "type": "boolean",
+              "description": "Whether to serialize snapshot to /workspace/in/cognitive_workspace.json."
+            },
+            "falsification_check": {
+              "type": "string",
+              "description": "Explicit pre-mortem falsification check: how could this approach fail or be wrong?"
+            },
+            "boundary_constraints": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of hard boundary constraints or rules."
+            }
+          }
+        },
+        "description": "Initializes, updates, reads, or forks the active working memory workspace. Maintains the active macro goal, immediate subtask, hard boundary constraints, active hypothesis, falsification targets, and Tree-of-Thoughts reasoning branches in persistent storage out-of-band."
+      },
+      "outputType": "respond_to_ai",
+      "permissions": [
+        "local_storage",
+        "workspace"
+      ],
+      "implementationType": "javascript"
+    },
+    {
+      "id": "fn_manage_task_scheduler",
+      "code": "async function manage_task_scheduler(params, userSettings, resources) {\n  const { action = 'list', tasks = [], target_task_id, target_status, verification_proof } = params;\n  let dag = await storage.get('task_dag') || [];\n\n  if (action === 'create_plan') {\n    dag = tasks.map((t, idx) => ({\n      id: t.id || ('task_' + (idx + 1)),\n      title: t.title,\n      dependencies: t.dependencies || [],\n      verification_criteria: t.verification_criteria || 'Explicit output verification',\n      status: t.status || 'pending',\n      verification_proof: null,\n      updated_at: new Date().toISOString()\n    }));\n    await storage.set('task_dag', dag);\n    if (workspace && workspace.saveData) {\n      await workspace.saveData('task_scheduler_dag', dag, 'json');\n    }\n    return JSON.stringify({ status: 'success', message: 'Initialized task plan with ' + dag.length + ' tasks.', plan: dag }, null, 2);\n  }\n\n  if (action === 'update_task' || action === 'verify_task') {\n    if (!target_task_id) throw new Error(\"Missing 'target_task_id' for update/verify action.\");\n    const taskIndex = dag.findIndex(t => t.id === target_task_id);\n    if (taskIndex === -1) throw new Error(\"Task '\" + target_task_id + \"' not found in task scheduler.\");\n\n    if (action === 'verify_task') {\n      if (!verification_proof) throw new Error(\"A task cannot be marked 'verified' without providing 'verification_proof'.\");\n      dag[taskIndex].status = 'verified';\n      dag[taskIndex].verification_proof = verification_proof;\n    } else {\n      if (target_status) dag[taskIndex].status = target_status;\n      if (verification_proof) dag[taskIndex].verification_proof = verification_proof;\n    }\n    dag[taskIndex].updated_at = new Date().toISOString();\n    await storage.set('task_dag', dag);\n    if (workspace && workspace.saveData) {\n      await workspace.saveData('task_scheduler_dag', dag, 'json');\n    }\n    return JSON.stringify({ status: 'success', message: \"Task '\" + target_task_id + \"' updated.\", task: dag[taskIndex] }, null, 2);\n  }\n\n  return JSON.stringify({ status: 'success', total_tasks: dag.length, tasks: dag }, null, 2);\n}",
+      "name": "Manage Task Scheduler (DAG)",
+      "openaiSpec": {
+        "name": "manage_task_scheduler",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "List of task objects when creating plan: [{ id, title, dependencies, verification_criteria }]."
+            },
+            "action": {
+              "enum": [
+                "create_plan",
+                "update_task",
+                "verify_task",
+                "list"
+              ],
+              "type": "string",
+              "description": "Action: create_plan, update_task, verify_task, or list."
+            },
+            "target_status": {
+              "enum": [
+                "pending",
+                "active",
+                "blocked",
+                "verified",
+                "failed"
+              ],
+              "type": "string",
+              "description": "New status for the task."
+            },
+            "target_task_id": {
+              "type": "string",
+              "description": "Task identifier when updating or verifying an individual task node."
+            },
+            "verification_proof": {
+              "type": "string",
+              "description": "Required empirical verification evidence (quote, code output, calculation) to mark a task verified."
+            }
+          }
+        },
+        "description": "Maintains a Directed Acyclic Graph (DAG) of tasks, subtasks, prerequisites, and empirical verification criteria. Enforces least-to-most problem decomposition and prevents sub-goal amnesia."
+      },
+      "outputType": "respond_to_ai",
+      "permissions": [
+        "local_storage",
+        "workspace"
+      ],
+      "implementationType": "javascript"
+    },
+    {
+      "id": "fn_commit_evidence_node",
+      "code": "async function commit_evidence_node(params, userSettings, resources) {\n  const {\n    folder = 'general',\n    topic = 'unfiled',\n    claim,\n    source_url,\n    source_title = 'Web Source',\n    credibility_tier = 'secondary',\n    sift_weight = 0.5,\n    verbatim_quote,\n    confidence = 'Medium',\n    tabular_data = null,\n    stage_to_workspace = false\n  } = params;\n\n  if (!claim) throw new Error(\"Parameter 'claim' is required.\");\n  if (!verbatim_quote && credibility_tier !== 'tertiary') {\n    throw new Error(\"Rigorous lineage mandate: You must provide a 'verbatim_quote' supporting this claim for primary/secondary sources.\");\n  }\n\n  let tree = await storage.get('knowledge_tree') || {};\n  if (!tree[folder]) tree[folder] = {};\n  if (!tree[folder][topic]) tree[folder][topic] = [];\n\n  const nodeId = 'ev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);\n  const node = {\n    id: nodeId,\n    claim,\n    source_url: source_url || 'direct_observation',\n    source_title,\n    credibility_tier,\n    sift_weight: typeof sift_weight === 'number' ? sift_weight : 0.5,\n    verbatim_quote: verbatim_quote || '',\n    confidence,\n    committed_at: new Date().toISOString()\n  };\n\n  tree[folder][topic].push(node);\n  await storage.set('knowledge_tree', tree);\n\n  let stagedPath = null;\n  if (stage_to_workspace && workspace) {\n    const slug = (folder + '_' + topic).replace(/[^a-z0-9_-]/gi, '_').toLowerCase();\n    if (tabular_data) {\n      const isCsv = String(tabular_data).trim().includes('\\n') && String(tabular_data).includes(',');\n      const fileRes = await workspace.writeFile('evidence_' + slug + (isCsv ? '.csv' : '.json'), String(tabular_data), 'in');\n      stagedPath = fileRes.relativePath;\n    } else {\n      const fileRes = await workspace.saveData('evidence_' + slug, tree[folder][topic], 'json');\n      stagedPath = fileRes.relativePath;\n    }\n  }\n\n  return JSON.stringify({\n    status: 'success',\n    node_id: nodeId,\n    location: folder + ' / ' + topic,\n    staged_to_workspace: stagedPath,\n    agent_note: stagedPath \n      ? 'Evidence staged at /workspace/' + stagedPath + '. You can use execute_python with pandas to inspect, audit, or model this data.'\n      : 'Evidence committed to persistent knowledge tree under [' + folder + ' > ' + topic + '].'\n  }, null, 2);\n}",
+      "name": "Commit Evidence Node",
+      "openaiSpec": {
+        "name": "commit_evidence_node",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "folder",
+            "topic",
+            "claim",
+            "credibility_tier",
+            "confidence"
+          ],
+          "properties": {
+            "claim": {
+              "type": "string",
+              "description": "The precise empirical claim or fact established as true."
+            },
+            "topic": {
+              "type": "string",
+              "description": "Specific topic or entity within the folder (e.g. 'thermal_efficiency', '2026_gdp')."
+            },
+            "folder": {
+              "type": "string",
+              "description": "Category or broad domain folder (e.g. 'aviation_engines', 'macroeconomics')."
+            },
+            "confidence": {
+              "enum": [
+                "High",
+                "Medium",
+                "Low"
+              ],
+              "type": "string",
+              "description": "Confidence ceiling: High, Medium, or Low."
+            },
+            "source_url": {
+              "type": "string",
+              "description": "Source URL or canonical identifier (e.g. DOI, paper title, RFC)."
+            },
+            "sift_weight": {
+              "type": "number",
+              "description": "Stanford lateral reading / SIFT epistemic weight score from 0.0 to 1.0."
+            },
+            "source_title": {
+              "type": "string",
+              "description": "Source title or publication name."
+            },
+            "tabular_data": {
+              "type": "string",
+              "description": "Optional CSV or JSON string of tabular empirical data to stage."
+            },
+            "verbatim_quote": {
+              "type": "string",
+              "description": "Exact verbatim excerpt or quote from the source verifying this claim."
+            },
+            "credibility_tier": {
+              "enum": [
+                "primary",
+                "secondary",
+                "tertiary"
+              ],
+              "type": "string",
+              "description": "Publisher credibility level: primary, secondary, or tertiary."
+            },
+            "stage_to_workspace": {
+              "type": "boolean",
+              "description": "Whether to automatically stage this evidence table into /workspace/in/ for Python."
+            }
+          }
+        },
+        "description": "Commits verified factual claims, data tables, and sources into persistent hierarchical topic folders with strict SIFT provenance and verbatim citation tracking. Can stage tables directly into /workspace/in/ for Python analysis."
+      },
+      "outputType": "respond_to_ai",
+      "permissions": [
+        "local_storage",
+        "workspace"
+      ],
+      "implementationType": "javascript"
+    },
+    {
+      "id": "fn_query_knowledge_base",
+      "code": "async function query_knowledge_base(params, userSettings, resources) {\n  const { folder, topic, search_query, min_credibility = 'all', list_topics_only = false } = params;\n  const tree = await storage.get('knowledge_tree') || {};\n\n  if (list_topics_only) {\n    const directory = {};\n    for (const f of Object.keys(tree)) {\n      directory[f] = Object.keys(tree[f]).map(t => ({\n        topic: t,\n        nodes_count: tree[f][t].length\n      }));\n    }\n    return JSON.stringify({ status: 'success', directory }, null, 2);\n  }\n\n  let nodes = [];\n  const foldersToSearch = folder ? (tree[folder] ? [folder] : []) : Object.keys(tree);\n\n  for (const f of foldersToSearch) {\n    const topicsToSearch = topic ? (tree[f][topic] ? [topic] : []) : Object.keys(tree[f] || {});\n    for (const t of topicsToSearch) {\n      const items = tree[f][t] || [];\n      items.forEach(item => {\n        nodes.push({ folder: f, topic: t, ...item });\n      });\n    }\n  }\n\n  if (min_credibility === 'primary_only') {\n    nodes = nodes.filter(n => n.credibility_tier === 'primary' || n.sift_weight >= 0.75);\n  } else if (min_credibility === 'secondary_and_above') {\n    nodes = nodes.filter(n => n.credibility_tier !== 'tertiary');\n  }\n\n  if (search_query) {\n    const qLower = String(search_query).toLowerCase();\n    nodes = nodes.filter(n => \n      n.claim.toLowerCase().includes(qLower) || \n      (n.verbatim_quote && n.verbatim_quote.toLowerCase().includes(qLower)) ||\n      n.topic.toLowerCase().includes(qLower)\n    );\n  }\n\n  return JSON.stringify({\n    status: 'success',\n    matched_count: nodes.length,\n    results: nodes.slice(0, 25)\n  }, null, 2);\n}",
+      "name": "Query Knowledge Base",
+      "openaiSpec": {
+        "name": "query_knowledge_base",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string",
+              "description": "Topic name to filter search to."
+            },
+            "folder": {
+              "type": "string",
+              "description": "Folder name to filter search to."
+            },
+            "search_query": {
+              "type": "string",
+              "description": "Keyword search query across claims and verbatim excerpts."
+            },
+            "min_credibility": {
+              "enum": [
+                "all",
+                "primary_only",
+                "secondary_and_above"
+              ],
+              "type": "string",
+              "description": "Filter by source credibility: all, primary_only, or secondary_and_above."
+            },
+            "list_topics_only": {
+              "type": "boolean",
+              "description": "If true, returns only the directory tree of folders and topics with counts."
+            }
+          }
+        },
+        "description": "Searches and retrieves stored evidence nodes, folders, topics, and source citations across past turns and sessions without bloating the active prompt context."
+      },
+      "outputType": "respond_to_ai",
+      "permissions": [
+        "local_storage"
+      ],
+      "implementationType": "javascript"
+    },
+    {
+      "id": "fn_execute_backtrack_audit",
+      "code": "async function execute_backtrack_audit(params, userSettings, resources) {\n  const {\n    failed_step,\n    error_coordinate,\n    root_cause_analysis,\n    counterfactual_rule,\n    prune_branch_id,\n    compile_permanent_sop = false\n  } = params;\n\n  if (!failed_step || !error_coordinate || !counterfactual_rule) {\n    throw new Error(\"Missing required audit fields: failed_step, error_coordinate, and counterfactual_rule.\");\n  }\n\n  const auditEntry = {\n    id: 'audit_' + Date.now(),\n    failed_step,\n    error_coordinate,\n    root_cause_analysis: root_cause_analysis || 'Unspecified decoupling of model reasoning from ground truth',\n    counterfactual_rule,\n    timestamp: new Date().toISOString()\n  };\n\n  let audits = await storage.get('episodic_audits') || [];\n  audits.unshift(auditEntry);\n  if (audits.length > 50) audits = audits.slice(0, 50);\n  await storage.set('episodic_audits', audits);\n\n  let branchPruned = null;\n  if (prune_branch_id) {\n    let workspaceState = await storage.get('workspace_state');\n    if (workspaceState && workspaceState.branches && workspaceState.branches[prune_branch_id]) {\n      workspaceState.branches[prune_branch_id].status = 'pruned_dead_end';\n      workspaceState.branches[prune_branch_id].prune_reason = counterfactual_rule;\n      if (workspaceState.active_branch === prune_branch_id) {\n        workspaceState.active_branch = workspaceState.branches[prune_branch_id].parent || 'main';\n      }\n      await storage.set('workspace_state', workspaceState);\n      branchPruned = prune_branch_id;\n    }\n  }\n\n  let sopCompiled = null;\n  if (compile_permanent_sop) {\n    let policies = await storage.get('metacognitive_policies') || [];\n    const newPolicy = {\n      id: 'sop_' + Date.now(),\n      rule: counterfactual_rule,\n      trigger_condition: 'Evaluation of ' + failed_step,\n      context: root_cause_analysis,\n      compiled_at: new Date().toISOString()\n    };\n    policies.push(newPolicy);\n    await storage.set('metacognitive_policies', policies);\n    sopCompiled = newPolicy;\n  }\n\n  return JSON.stringify({\n    status: 'success',\n    message: 'Failure localized. Backtrack state locked in episodic memory.',\n    audit: auditEntry,\n    pruned_branch: branchPruned,\n    sop_compiled: sopCompiled,\n    recovery_directive: \"Proceed with counterfactual alternative: '\" + counterfactual_rule + \"'. Do NOT repeat past failure coordinates.\"\n  }, null, 2);\n}",
+      "name": "Execute Backtrack Audit",
+      "openaiSpec": {
+        "name": "execute_backtrack_audit",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "failed_step",
+            "error_coordinate",
+            "counterfactual_rule"
+          ],
+          "properties": {
+            "failed_step": {
+              "type": "string",
+              "description": "The specific execution step, tool call, or reasoning assertion that failed."
+            },
+            "prune_branch_id": {
+              "type": "string",
+              "description": "Optional branch ID to prune from the Tree-of-Thoughts reasoning workspace."
+            },
+            "error_coordinate": {
+              "type": "string",
+              "description": "Exact line number, parameter, formula, or state coordinate of failure."
+            },
+            "counterfactual_rule": {
+              "type": "string",
+              "description": "The counterfactual rule: 'If [X] was changed to [Y], result would be [Z]'. Defines the explicit delta."
+            },
+            "root_cause_analysis": {
+              "type": "string",
+              "description": "Root cause explanation of why the failure occurred."
+            },
+            "compile_permanent_sop": {
+              "type": "boolean",
+              "description": "If true, compiles this rule into a permanent Standard Operating Procedure (SOP) across sessions."
+            }
+          }
+        },
+        "description": "MANDATORY ERROR RECOVERY TOOL: Trigger immediately when an API fails, code throws an error, or a reasoning step is falsified. Pinpoints exact error coordinates, establishes counterfactual verification rules, and prunes invalid reasoning branches."
+      },
+      "outputType": "respond_to_ai",
+      "permissions": [
+        "local_storage"
+      ],
+      "implementationType": "javascript"
+    }
+  ],
+  "localStorage": {
+    "enabled": true,
+    "initialData": {
+      "task_dag": [],
+      "knowledge_tree": {},
+      "episodic_audits": [],
+      "workspace_state": null,
+      "metacognitive_policies": []
+    }
+  },
+  "userSettings": [],
+  "vaultSecrets": [],
+  "contextPrompt": "### [Plugin Context: Metacognitive Executive Architecture (MEA)]\nOPERATIONAL PROTOCOL MANDATE:\nYou have an active Metacognitive Executive Architecture backing your reasoning engine. For every non-trivial analytical, coding, research, multi-step investigation, or information organization task, you MUST adhere to the following System-2 loop:\n1. Executive Initialization: Call `manage_cognitive_workspace` to initialize or update your macro_goal, active_hypothesis, boundary_constraints, and falsification_check.\n2. Decomposition: Call `manage_task_scheduler` with action='create_plan' to break complex inquiries into a Directed Acyclic Graph (DAG) of subtasks with explicit verification criteria.\n3. Grounded Evidence Ingestion: When ingesting facts or search results, use `commit_evidence_node` with strict SIFT provenance (claim, verbatim quote, source URL, credibility tier). If tabular or dataset evidence exceeds 5 rows/items, set `stage_to_workspace=true` to write directly to `/workspace/in/`.\n4. Code Execution Bridge: For quantitative analysis, statistical audits, or tabular transformations, use `execute_python` directly on staged files in `/workspace/in/`.\n5. Backtracking & Failure Recovery: If a tool fails, an assertion is invalidated, or an execution error occurs, you are STRICTLY FORBIDDEN from immediately re-guessing. You MUST invoke `execute_backtrack_audit` to localize the failure coordinates, state the counterfactual rule, and prune the failed branch before continuing.",
+  "user_settings": [],
+  "context_prompt": "### [Plugin Context: Metacognitive Executive Architecture (MEA)]\nOPERATIONAL PROTOCOL MANDATE:\nYou have an active Metacognitive Executive Architecture backing your reasoning engine. For every non-trivial analytical, coding, research, multi-step investigation, or information organization task, you MUST adhere to the following System-2 loop:\n1. Executive Initialization: Call `manage_cognitive_workspace` to initialize or update your macro_goal, active_hypothesis, boundary_constraints, and falsification_check.\n2. Decomposition: Call `manage_task_scheduler` with action='create_plan' to break complex inquiries into a Directed Acyclic Graph (DAG) of subtasks with explicit verification criteria.\n3. Grounded Evidence Ingestion: When ingesting facts or search results, use `commit_evidence_node` with strict SIFT provenance (claim, verbatim quote, source URL, credibility tier). If tabular or dataset evidence exceeds 5 rows/items, set `stage_to_workspace=true` to write directly to `/workspace/in/`.\n4. Code Execution Bridge: For quantitative analysis, statistical audits, or tabular transformations, use `execute_python` directly on staged files in `/workspace/in/`.\n5. Backtracking & Failure Recovery: If a tool fails, an assertion is invalidated, or an execution error occurs, you are STRICTLY FORBIDDEN from immediately re-guessing. You MUST invoke `execute_backtrack_audit` to localize the failure coordinates, state the counterfactual rule, and prune the failed branch before continuing.",
+  "pluginFunctions": [
+    {
+      "id": "fn_manage_cognitive_workspace",
+      "code": "async function manage_cognitive_workspace(params, userSettings, resources) {\n  const { \n    action = 'update', \n    macro_goal, \n    active_subtask, \n    boundary_constraints = [], \n    active_hypothesis, \n    falsification_check, \n    branch_id = 'main', \n    parent_branch_id = null,\n    branch_eval_score = 1.0,\n    sync_to_workspace = true \n  } = params;\n\n  let state = await storage.get('workspace_state') || {\n    macro_goal: '',\n    active_subtask: '',\n    boundary_constraints: [],\n    active_hypothesis: '',\n    falsification_check: '',\n    branches: {\n      'main': { id: 'main', parent: null, hypothesis: '', status: 'active', score: 1.0, history: [] }\n    },\n    active_branch: 'main',\n    updated_at: new Date().toISOString()\n  };\n\n  if (action === 'read') {\n    return JSON.stringify({ status: 'success', current_workspace: state }, null, 2);\n  }\n\n  if (macro_goal) state.macro_goal = macro_goal;\n  if (active_subtask) state.active_subtask = active_subtask;\n  if (boundary_constraints && boundary_constraints.length > 0) state.boundary_constraints = boundary_constraints;\n  if (active_hypothesis) state.active_hypothesis = active_hypothesis;\n  if (falsification_check) state.falsification_check = falsification_check;\n\n  if (action === 'fork_branch') {\n    const newBranchId = branch_id || ('branch_' + Date.now());\n    state.branches[newBranchId] = {\n      id: newBranchId,\n      parent: parent_branch_id || state.active_branch,\n      hypothesis: active_hypothesis || '',\n      status: 'exploring',\n      score: branch_eval_score,\n      created_at: new Date().toISOString()\n    };\n    state.active_branch = newBranchId;\n  } else if (action === 'prune_branch') {\n    if (state.branches[branch_id]) {\n      state.branches[branch_id].status = 'pruned_dead_end';\n      state.branches[branch_id].pruned_at = new Date().toISOString();\n      if (state.active_branch === branch_id) {\n        state.active_branch = state.branches[branch_id].parent || 'main';\n      }\n    }\n  } else {\n    if (!state.branches[branch_id]) {\n      state.branches[branch_id] = { id: branch_id, parent: null, status: 'active', score: 1.0 };\n    }\n    state.branches[branch_id].hypothesis = active_hypothesis || state.branches[branch_id].hypothesis;\n    state.branches[branch_id].score = branch_eval_score;\n    state.active_branch = branch_id;\n  }\n\n  state.updated_at = new Date().toISOString();\n  await storage.set('workspace_state', state);\n\n  let workspaceFileNote = '';\n  if (sync_to_workspace && workspace && workspace.saveData) {\n    try {\n      const fileRes = await workspace.saveData('cognitive_workspace', state, 'json');\n      workspaceFileNote = ' Synchronized to ' + fileRes.relativePath + '.';\n    } catch (e) {}\n  }\n\n  return JSON.stringify({\n    status: 'success',\n    message: 'Cognitive workspace updated successfully.' + workspaceFileNote,\n    active_branch: state.active_branch,\n    active_subtask: state.active_subtask,\n    boundary_constraints: state.boundary_constraints,\n    falsification_check: state.falsification_check\n  }, null, 2);\n}",
+      "name": "Manage Cognitive Workspace",
+      "openaiSpec": {
+        "name": "manage_cognitive_workspace",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "update",
+                "read",
+                "fork_branch",
+                "prune_branch"
+              ],
+              "type": "string",
+              "description": "Action: update (default), read, fork_branch, or prune_branch."
+            },
+            "branch_id": {
+              "type": "string",
+              "description": "Identifier for the active reasoning branch (defaults to main)."
+            },
+            "macro_goal": {
+              "type": "string",
+              "description": "The overarching macro objective."
+            },
+            "active_subtask": {
+              "type": "string",
+              "description": "The immediate operational subtask."
+            },
+            "parent_branch_id": {
+              "type": "string",
+              "description": "Parent branch ID when forking."
+            },
+            "active_hypothesis": {
+              "type": "string",
+              "description": "The active hypothesis or approach being verified."
+            },
+            "branch_eval_score": {
+              "type": "number",
+              "description": "Self-evaluation score (0.0 to 1.0) for this reasoning branch against constraints."
+            },
+            "sync_to_workspace": {
+              "type": "boolean",
+              "description": "Whether to serialize snapshot to /workspace/in/cognitive_workspace.json."
+            },
+            "falsification_check": {
+              "type": "string",
+              "description": "Explicit pre-mortem falsification check: how could this approach fail or be wrong?"
+            },
+            "boundary_constraints": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of hard boundary constraints or rules."
+            }
+          }
+        },
+        "description": "Initializes, updates, reads, or forks the active working memory workspace. Maintains the active macro goal, immediate subtask, hard boundary constraints, active hypothesis, falsification targets, and Tree-of-Thoughts reasoning branches in persistent storage out-of-band."
+      },
+      "outputType": "respond_to_ai",
+      "permissions": [
+        "local_storage",
+        "workspace"
+      ],
+      "implementationType": "javascript"
+    },
+    {
+      "id": "fn_manage_task_scheduler",
+      "code": "async function manage_task_scheduler(params, userSettings, resources) {\n  const { action = 'list', tasks = [], target_task_id, target_status, verification_proof } = params;\n  let dag = await storage.get('task_dag') || [];\n\n  if (action === 'create_plan') {\n    dag = tasks.map((t, idx) => ({\n      id: t.id || ('task_' + (idx + 1)),\n      title: t.title,\n      dependencies: t.dependencies || [],\n      verification_criteria: t.verification_criteria || 'Explicit output verification',\n      status: t.status || 'pending',\n      verification_proof: null,\n      updated_at: new Date().toISOString()\n    }));\n    await storage.set('task_dag', dag);\n    if (workspace && workspace.saveData) {\n      await workspace.saveData('task_scheduler_dag', dag, 'json');\n    }\n    return JSON.stringify({ status: 'success', message: 'Initialized task plan with ' + dag.length + ' tasks.', plan: dag }, null, 2);\n  }\n\n  if (action === 'update_task' || action === 'verify_task') {\n    if (!target_task_id) throw new Error(\"Missing 'target_task_id' for update/verify action.\");\n    const taskIndex = dag.findIndex(t => t.id === target_task_id);\n    if (taskIndex === -1) throw new Error(\"Task '\" + target_task_id + \"' not found in task scheduler.\");\n\n    if (action === 'verify_task') {\n      if (!verification_proof) throw new Error(\"A task cannot be marked 'verified' without providing 'verification_proof'.\");\n      dag[taskIndex].status = 'verified';\n      dag[taskIndex].verification_proof = verification_proof;\n    } else {\n      if (target_status) dag[taskIndex].status = target_status;\n      if (verification_proof) dag[taskIndex].verification_proof = verification_proof;\n    }\n    dag[taskIndex].updated_at = new Date().toISOString();\n    await storage.set('task_dag', dag);\n    if (workspace && workspace.saveData) {\n      await workspace.saveData('task_scheduler_dag', dag, 'json');\n    }\n    return JSON.stringify({ status: 'success', message: \"Task '\" + target_task_id + \"' updated.\", task: dag[taskIndex] }, null, 2);\n  }\n\n  return JSON.stringify({ status: 'success', total_tasks: dag.length, tasks: dag }, null, 2);\n}",
+      "name": "Manage Task Scheduler (DAG)",
+      "openaiSpec": {
+        "name": "manage_task_scheduler",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "List of task objects when creating plan: [{ id, title, dependencies, verification_criteria }]."
+            },
+            "action": {
+              "enum": [
+                "create_plan",
+                "update_task",
+                "verify_task",
+                "list"
+              ],
+              "type": "string",
+              "description": "Action: create_plan, update_task, verify_task, or list."
+            },
+            "target_status": {
+              "enum": [
+                "pending",
+                "active",
+                "blocked",
+                "verified",
+                "failed"
+              ],
+              "type": "string",
+              "description": "New status for the task."
+            },
+            "target_task_id": {
+              "type": "string",
+              "description": "Task identifier when updating or verifying an individual task node."
+            },
+            "verification_proof": {
+              "type": "string",
+              "description": "Required empirical verification evidence (quote, code output, calculation) to mark a task verified."
+            }
+          }
+        },
+        "description": "Maintains a Directed Acyclic Graph (DAG) of tasks, subtasks, prerequisites, and empirical verification criteria. Enforces least-to-most problem decomposition and prevents sub-goal amnesia."
+      },
+      "outputType": "respond_to_ai",
+      "permissions": [
+        "local_storage",
+        "workspace"
+      ],
+      "implementationType": "javascript"
+    },
+    {
+      "id": "fn_commit_evidence_node",
+      "code": "async function commit_evidence_node(params, userSettings, resources) {\n  const {\n    folder = 'general',\n    topic = 'unfiled',\n    claim,\n    source_url,\n    source_title = 'Web Source',\n    credibility_tier = 'secondary',\n    sift_weight = 0.5,\n    verbatim_quote,\n    confidence = 'Medium',\n    tabular_data = null,\n    stage_to_workspace = false\n  } = params;\n\n  if (!claim) throw new Error(\"Parameter 'claim' is required.\");\n  if (!verbatim_quote && credibility_tier !== 'tertiary') {\n    throw new Error(\"Rigorous lineage mandate: You must provide a 'verbatim_quote' supporting this claim for primary/secondary sources.\");\n  }\n\n  let tree = await storage.get('knowledge_tree') || {};\n  if (!tree[folder]) tree[folder] = {};\n  if (!tree[folder][topic]) tree[folder][topic] = [];\n\n  const nodeId = 'ev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);\n  const node = {\n    id: nodeId,\n    claim,\n    source_url: source_url || 'direct_observation',\n    source_title,\n    credibility_tier,\n    sift_weight: typeof sift_weight === 'number' ? sift_weight : 0.5,\n    verbatim_quote: verbatim_quote || '',\n    confidence,\n    committed_at: new Date().toISOString()\n  };\n\n  tree[folder][topic].push(node);\n  await storage.set('knowledge_tree', tree);\n\n  let stagedPath = null;\n  if (stage_to_workspace && workspace) {\n    const slug = (folder + '_' + topic).replace(/[^a-z0-9_-]/gi, '_').toLowerCase();\n    if (tabular_data) {\n      const isCsv = String(tabular_data).trim().includes('\\n') && String(tabular_data).includes(',');\n      const fileRes = await workspace.writeFile('evidence_' + slug + (isCsv ? '.csv' : '.json'), String(tabular_data), 'in');\n      stagedPath = fileRes.relativePath;\n    } else {\n      const fileRes = await workspace.saveData('evidence_' + slug, tree[folder][topic], 'json');\n      stagedPath = fileRes.relativePath;\n    }\n  }\n\n  return JSON.stringify({\n    status: 'success',\n    node_id: nodeId,\n    location: folder + ' / ' + topic,\n    staged_to_workspace: stagedPath,\n    agent_note: stagedPath \n      ? 'Evidence staged at /workspace/' + stagedPath + '. You can use execute_python with pandas to inspect, audit, or model this data.'\n      : 'Evidence committed to persistent knowledge tree under [' + folder + ' > ' + topic + '].'\n  }, null, 2);\n}",
+      "name": "Commit Evidence Node",
+      "openaiSpec": {
+        "name": "commit_evidence_node",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "folder",
+            "topic",
+            "claim",
+            "credibility_tier",
+            "confidence"
+          ],
+          "properties": {
+            "claim": {
+              "type": "string",
+              "description": "The precise empirical claim or fact established as true."
+            },
+            "topic": {
+              "type": "string",
+              "description": "Specific topic or entity within the folder (e.g. 'thermal_efficiency', '2026_gdp')."
+            },
+            "folder": {
+              "type": "string",
+              "description": "Category or broad domain folder (e.g. 'aviation_engines', 'macroeconomics')."
+            },
+            "confidence": {
+              "enum": [
+                "High",
+                "Medium",
+                "Low"
+              ],
+              "type": "string",
+              "description": "Confidence ceiling: High, Medium, or Low."
+            },
+            "source_url": {
+              "type": "string",
+              "description": "Source URL or canonical identifier (e.g. DOI, paper title, RFC)."
+            },
+            "sift_weight": {
+              "type": "number",
+              "description": "Stanford lateral reading / SIFT epistemic weight score from 0.0 to 1.0."
+            },
+            "source_title": {
+              "type": "string",
+              "description": "Source title or publication name."
+            },
+            "tabular_data": {
+              "type": "string",
+              "description": "Optional CSV or JSON string of tabular empirical data to stage."
+            },
+            "verbatim_quote": {
+              "type": "string",
+              "description": "Exact verbatim excerpt or quote from the source verifying this claim."
+            },
+            "credibility_tier": {
+              "enum": [
+                "primary",
+                "secondary",
+                "tertiary"
+              ],
+              "type": "string",
+              "description": "Publisher credibility level: primary, secondary, or tertiary."
+            },
+            "stage_to_workspace": {
+              "type": "boolean",
+              "description": "Whether to automatically stage this evidence table into /workspace/in/ for Python."
+            }
+          }
+        },
+        "description": "Commits verified factual claims, data tables, and sources into persistent hierarchical topic folders with strict SIFT provenance and verbatim citation tracking. Can stage tables directly into /workspace/in/ for Python analysis."
+      },
+      "outputType": "respond_to_ai",
+      "permissions": [
+        "local_storage",
+        "workspace"
+      ],
+      "implementationType": "javascript"
+    },
+    {
+      "id": "fn_query_knowledge_base",
+      "code": "async function query_knowledge_base(params, userSettings, resources) {\n  const { folder, topic, search_query, min_credibility = 'all', list_topics_only = false } = params;\n  const tree = await storage.get('knowledge_tree') || {};\n\n  if (list_topics_only) {\n    const directory = {};\n    for (const f of Object.keys(tree)) {\n      directory[f] = Object.keys(tree[f]).map(t => ({\n        topic: t,\n        nodes_count: tree[f][t].length\n      }));\n    }\n    return JSON.stringify({ status: 'success', directory }, null, 2);\n  }\n\n  let nodes = [];\n  const foldersToSearch = folder ? (tree[folder] ? [folder] : []) : Object.keys(tree);\n\n  for (const f of foldersToSearch) {\n    const topicsToSearch = topic ? (tree[f][topic] ? [topic] : []) : Object.keys(tree[f] || {});\n    for (const t of topicsToSearch) {\n      const items = tree[f][t] || [];\n      items.forEach(item => {\n        nodes.push({ folder: f, topic: t, ...item });\n      });\n    }\n  }\n\n  if (min_credibility === 'primary_only') {\n    nodes = nodes.filter(n => n.credibility_tier === 'primary' || n.sift_weight >= 0.75);\n  } else if (min_credibility === 'secondary_and_above') {\n    nodes = nodes.filter(n => n.credibility_tier !== 'tertiary');\n  }\n\n  if (search_query) {\n    const qLower = String(search_query).toLowerCase();\n    nodes = nodes.filter(n => \n      n.claim.toLowerCase().includes(qLower) || \n      (n.verbatim_quote && n.verbatim_quote.toLowerCase().includes(qLower)) ||\n      n.topic.toLowerCase().includes(qLower)\n    );\n  }\n\n  return JSON.stringify({\n    status: 'success',\n    matched_count: nodes.length,\n    results: nodes.slice(0, 25)\n  }, null, 2);\n}",
+      "name": "Query Knowledge Base",
+      "openaiSpec": {
+        "name": "query_knowledge_base",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string",
+              "description": "Topic name to filter search to."
+            },
+            "folder": {
+              "type": "string",
+              "description": "Folder name to filter search to."
+            },
+            "search_query": {
+              "type": "string",
+              "description": "Keyword search query across claims and verbatim excerpts."
+            },
+            "min_credibility": {
+              "enum": [
+                "all",
+                "primary_only",
+                "secondary_and_above"
+              ],
+              "type": "string",
+              "description": "Filter by source credibility: all, primary_only, or secondary_and_above."
+            },
+            "list_topics_only": {
+              "type": "boolean",
+              "description": "If true, returns only the directory tree of folders and topics with counts."
+            }
+          }
+        },
+        "description": "Searches and retrieves stored evidence nodes, folders, topics, and source citations across past turns and sessions without bloating the active prompt context."
+      },
+      "outputType": "respond_to_ai",
+      "permissions": [
+        "local_storage"
+      ],
+      "implementationType": "javascript"
+    },
+    {
+      "id": "fn_execute_backtrack_audit",
+      "code": "async function execute_backtrack_audit(params, userSettings, resources) {\n  const {\n    failed_step,\n    error_coordinate,\n    root_cause_analysis,\n    counterfactual_rule,\n    prune_branch_id,\n    compile_permanent_sop = false\n  } = params;\n\n  if (!failed_step || !error_coordinate || !counterfactual_rule) {\n    throw new Error(\"Missing required audit fields: failed_step, error_coordinate, and counterfactual_rule.\");\n  }\n\n  const auditEntry = {\n    id: 'audit_' + Date.now(),\n    failed_step,\n    error_coordinate,\n    root_cause_analysis: root_cause_analysis || 'Unspecified decoupling of model reasoning from ground truth',\n    counterfactual_rule,\n    timestamp: new Date().toISOString()\n  };\n\n  let audits = await storage.get('episodic_audits') || [];\n  audits.unshift(auditEntry);\n  if (audits.length > 50) audits = audits.slice(0, 50);\n  await storage.set('episodic_audits', audits);\n\n  let branchPruned = null;\n  if (prune_branch_id) {\n    let workspaceState = await storage.get('workspace_state');\n    if (workspaceState && workspaceState.branches && workspaceState.branches[prune_branch_id]) {\n      workspaceState.branches[prune_branch_id].status = 'pruned_dead_end';\n      workspaceState.branches[prune_branch_id].prune_reason = counterfactual_rule;\n      if (workspaceState.active_branch === prune_branch_id) {\n        workspaceState.active_branch = workspaceState.branches[prune_branch_id].parent || 'main';\n      }\n      await storage.set('workspace_state', workspaceState);\n      branchPruned = prune_branch_id;\n    }\n  }\n\n  let sopCompiled = null;\n  if (compile_permanent_sop) {\n    let policies = await storage.get('metacognitive_policies') || [];\n    const newPolicy = {\n      id: 'sop_' + Date.now(),\n      rule: counterfactual_rule,\n      trigger_condition: 'Evaluation of ' + failed_step,\n      context: root_cause_analysis,\n      compiled_at: new Date().toISOString()\n    };\n    policies.push(newPolicy);\n    await storage.set('metacognitive_policies', policies);\n    sopCompiled = newPolicy;\n  }\n\n  return JSON.stringify({\n    status: 'success',\n    message: 'Failure localized. Backtrack state locked in episodic memory.',\n    audit: auditEntry,\n    pruned_branch: branchPruned,\n    sop_compiled: sopCompiled,\n    recovery_directive: \"Proceed with counterfactual alternative: '\" + counterfactual_rule + \"'. Do NOT repeat past failure coordinates.\"\n  }, null, 2);\n}",
+      "name": "Execute Backtrack Audit",
+      "openaiSpec": {
+        "name": "execute_backtrack_audit",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "failed_step",
+            "error_coordinate",
+            "counterfactual_rule"
+          ],
+          "properties": {
+            "failed_step": {
+              "type": "string",
+              "description": "The specific execution step, tool call, or reasoning assertion that failed."
+            },
+            "prune_branch_id": {
+              "type": "string",
+              "description": "Optional branch ID to prune from the Tree-of-Thoughts reasoning workspace."
+            },
+            "error_coordinate": {
+              "type": "string",
+              "description": "Exact line number, parameter, formula, or state coordinate of failure."
+            },
+            "counterfactual_rule": {
+              "type": "string",
+              "description": "The counterfactual rule: 'If [X] was changed to [Y], result would be [Z]'. Defines the explicit delta."
+            },
+            "root_cause_analysis": {
+              "type": "string",
+              "description": "Root cause explanation of why the failure occurred."
+            },
+            "compile_permanent_sop": {
+              "type": "boolean",
+              "description": "If true, compiles this rule into a permanent Standard Operating Procedure (SOP) across sessions."
+            }
+          }
+        },
+        "description": "MANDATORY ERROR RECOVERY TOOL: Trigger immediately when an API fails, code throws an error, or a reasoning step is falsified. Pinpoints exact error coordinates, establishes counterfactual verification rules, and prunes invalid reasoning branches."
+      },
+      "outputType": "respond_to_ai",
+      "permissions": [
+        "local_storage"
+      ],
+      "implementationType": "javascript"
+    }
+  ],
+  "workspaceAccess": {
+    "enabled": true,
+    "allowedDirectories": [
+      "in",
+      "out",
+      "tmp"
+    ]
+  },
+  "overviewMarkdown": "# Metacognitive Executive Architecture (MEA) 🧠\n\nAn advanced System-2 cognitive operating environment engineered for Gemini Chat Hub.\n\n### Architectural Foundations:\n1. **CoALA Framework (Princeton, 2023):** Modular separation of Working, Episodic, Semantic, and Procedural memory.\n2. **Tree-of-Thoughts & Decoupled Backtracking (Yao et al., 2023):** Explores multi-branch hypotheses and prunes failed paths in persistent storage without vector dilution in chat context.\n3. **Verbal Reinforcement & Reflexion (Shinn et al., 2023):** Gated failure recovery requiring explicit error localization and counterfactual rule assertion.\n4. **Filesystem & Code Execution Bridge:** Stages structured evidence directly into `/workspace/in/` for statistical and programmatic auditing via Python.\n5. **Rigorous Provenance & Lineage:** Enforces verbatim citations and SIFT credibility tracking before committing facts to long-term memory.",
+  "authenticationType": "AUTH_TYPE_NONE"
+}
