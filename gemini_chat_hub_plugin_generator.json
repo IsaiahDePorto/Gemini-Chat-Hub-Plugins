@@ -1,1252 +1,22 @@
 {
   "id": "gemini_chat_hub_plugin_generator",
-  "name": "Gemini Chat Hub Plugin Generator",
   "uuid": "8f36c58e-32d1-4b77-9a54-6d9b32c81e59",
   "emoji": "⚙️",
   "title": "Gemini Chat Hub Plugin Generator",
+  "name": "Gemini Chat Hub Plugin Generator",
+  "version": "2.1.0",
   "author": "Gemini Chat Hub Engineering",
   "iconURL": "https://api.iconify.design/lucide:blocks.svg",
-  "version": "2.0.0",
   "icon_url": "https://api.iconify.design/lucide:blocks.svg",
-  "functions": [
-    {
-      "code": "async function compile_gemini_chat_hub_plugin_json(params, userSettings, resources) {\n  function generateUUID() {\n    try {\n      return crypto.randomUUID();\n    } catch (e) {\n      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {\n        const r = Math.random() * 16 | 0;\n        const v = c === 'x' ? r : (r & 0x03 | 0x08);\n        return v.toString(16);\n      });\n    }\n  }\n\n  function ensureString(val) {\n    if (val === undefined || val === null) return \"\";\n    if (typeof val === \"object\") {\n      return JSON.stringify(val, null, 2);\n    }\n    return String(val);\n  }\n\n  try {\n    const pluginTitle = params.title || params.name || \"Custom Plugin\";\n    const pluginId = params.id || pluginTitle.toLowerCase().replace(/[^a-z0-9_]/g, \"_\");\n    const pluginUUID = generateUUID();\n\n    const finalUserSettings = [];\n\n    if (params.userSettings && Array.isArray(params.userSettings)) {\n      params.userSettings.forEach(setting => {\n        const s = {\n          name: setting.name,\n          type: setting.type || \"text\",\n          label: setting.label || setting.name,\n          required: setting.required !== false,\n          description: setting.description || \"\"\n        };\n        if (setting.placeholder) s.placeholder = setting.placeholder;\n        if (setting.type === \"enum\" && (setting.enum || setting.values)) {\n          s.values = setting.enum || setting.values;\n        }\n        if (setting.defaultValue !== undefined) {\n          s.defaultValue = setting.defaultValue;\n        }\n        if (setting.vaultSecret) {\n          s.vaultSecret = setting.vaultSecret;\n        }\n        finalUserSettings.push(s);\n      });\n    }\n\n    const pluginFunctions = [];\n    if (params.functions && Array.isArray(params.functions)) {\n      params.functions.forEach(fn => {\n        const funcUUID = generateUUID();\n        \n        const requiredParams = [];\n        const properties = {};\n        \n        if (fn.parameters && Array.isArray(fn.parameters)) {\n          fn.parameters.forEach(p => {\n            properties[p.name] = {\n              type: p.type || \"string\",\n              description: p.description || \"\"\n            };\n            if (p.type === \"array\" && p.itemsType) {\n              properties[p.name].items = { type: p.itemsType };\n            }\n            if ((p.enum || p.values) && Array.isArray(p.enum || p.values)) {\n              properties[p.name].enum = p.enum || p.values;\n            }\n            if (p.required) {\n              requiredParams.push(p.name);\n            }\n          });\n        }\n\n        const openaiSpec = {\n          name: fn.name,\n          description: fn.description || \"\",\n          parameters: {\n            type: \"object\",\n            properties: properties\n          }\n        };\n\n        if (requiredParams.length > 0) {\n          openaiSpec.parameters.required = requiredParams;\n        }\n\n        const compiledFunc = {\n          id: funcUUID,\n          name: fn.label || fn.name,\n          implementationType: fn.implementationType || \"javascript\",\n          outputType: fn.outputType || \"respond_to_ai\",\n          openaiSpec: openaiSpec,\n          permissions: Array.isArray(fn.permissions) && fn.permissions.length > 0 \n            ? fn.permissions \n            : [\"local_storage\", \"workspace\", \"vault\"]\n        };\n\n        if (fn.implementationType === \"javascript\") {\n          compiledFunc.code = fn.code || \"\";\n        } else if (fn.implementationType === \"http\") {\n          const headersStr = ensureString(fn.httpHeaders);\n          const bodyStr = ensureString(fn.httpBody);\n          const hasHeaders = !!headersStr && headersStr.trim() !== \"\" && headersStr.trim() !== \"{}\";\n          const hasBody = !!bodyStr && bodyStr.trim() !== \"\";\n          \n          compiledFunc.httpAction = {\n            id: generateUUID(),\n            url: fn.httpUrl || \"\",\n            name: \"\",\n            method: (fn.httpMethod || \"GET\").toUpperCase(),\n            hasHeaders: hasHeaders,\n            requestHeaders: hasHeaders ? headersStr : \"\",\n            hasBody: hasBody,\n            requestBody: hasBody ? bodyStr : \"\",\n            requestBodyFormat: fn.requestBodyFormat || \"json\",\n            save_to_workspace: !!fn.saveToWorkspace,\n            workspace_filename: fn.workspaceFilename || \"\"\n          };\n\n          if (fn.templateString) {\n            compiledFunc.httpAction.hasResultTransform = true;\n            compiledFunc.httpAction.resultTransform = {\n              engine: fn.transformEngine || \"handlebars\",\n              templateString: fn.templateString\n            };\n          }\n        }\n\n        pluginFunctions.push(compiledFunc);\n      });\n    }\n\n    const localStorageConfig = params.localStorage !== undefined \n      ? params.localStorage \n      : { enabled: true, initialData: {} };\n\n    const workspaceAccessConfig = params.workspaceAccess !== undefined \n      ? params.workspaceAccess \n      : { enabled: true, allowedDirectories: [\"in\", \"out\", \"tmp\"] };\n\n    const vaultSecretsList = Array.isArray(params.vaultSecrets) \n      ? params.vaultSecrets \n      : [];\n\n    const finalPlugin = { \n      id: pluginId,\n      uuid: pluginUUID,\n      emoji: params.emoji || \"⚙️\",\n      title: pluginTitle,\n      name: pluginTitle,\n      iconURL: params.iconURL || \"https://api.iconify.design/lucide:blocks.svg\",\n      icon_url: params.iconURL || \"https://api.iconify.design/lucide:blocks.svg\",\n      version: params.version || \"2.0.0\",\n      author: params.author || \"Gemini Chat Hub\",\n      userSettings: finalUserSettings,\n      user_settings: finalUserSettings,\n      pluginFunctions: pluginFunctions,\n      functions: pluginFunctions,\n      contextPrompt: params.contextPrompt || \"\",\n      context_prompt: params.contextPrompt || \"\",\n      localStorage: localStorageConfig,\n      workspaceAccess: workspaceAccessConfig,\n      vaultSecrets: vaultSecretsList,\n      overviewMarkdown: params.overviewMarkdown || (\"# \" + pluginTitle + \"\\n\\nCustom Gemini Chat Hub plugin.\"),\n      authenticationType: \"AUTH_TYPE_NONE\"\n    };\n\n    const jsonString = JSON.stringify(finalPlugin, null, 2);\n    \n    return \"### ⚙️ Gemini Chat Hub Plugin Compiled Successfully!\\n\" +\n      \"Here is the JSON payload for **\" + finalPlugin.title + \"**, ready to import into Gemini Chat Hub.\\n\\n\" +\n      \"#### Capabilities Enabled:\\n\" +\n      \"- 💾 **Persistent Local Storage**: \" + (finalPlugin.localStorage?.enabled ? \"Active (PostgreSQL + Disk Mirroring)\" : \"Disabled\") + \"\\n\" +\n      \"- 🖥️ **Workspace Code Execution Bridge**: \" + (finalPlugin.workspaceAccess?.enabled ? \"Active (/workspace/in, out, tmp)\" : \"Disabled\") + \"\\n\" +\n      \"- 🔑 **Secret Vault Access**: \" + (finalPlugin.vaultSecrets?.length ? finalPlugin.vaultSecrets.join(\", \") : \"None requested\") + \"\\n\" +\n      \"- ⚡ **Node.js VM Execution**: Direct server fetch (Zero CORS restrictions, 90s timeout)\\n\\n\" +\n      \"To install this in Gemini Chat Hub:\\n\" +\n      \"1. Hover over the JSON code block below and click **Copy**.\\n\" +\n      \"2. Open the **Plugins** dialog (click the puzzle/blocks icon in the header or sidebar).\\n\" +\n      \"3. Switch to the **Import Plugin JSON** tab.\\n\" +\n      \"4. Paste the JSON and click **Import and Register Plugin**.\\n\" +\n      \"5. If User Settings or Vault Secrets are configured, click the **Settings** gear to configure them!\\n\\n\" +\n      \"\\n\\n\" +\n      String.fromCharCode(96).repeat(3) + \"json\\n\" + jsonString + \"\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\\n\" +\n      \"---\\n*Compiled using Gemini Chat Hub Plugin Generator.*\n\n  } catch (err) {\n    return \"### ❌ Compilation Error\\nAn error occurred while compiling your plugin:\\n\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\" + err.message + \"\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\";\n  }\n}",
-      "spec": {
-        "name": "compile_gemini_chat_hub_plugin_json",
-        "parameters": {
-          "type": "object",
-          "required": [
-            "title",
-            "functions"
-          ],
-          "properties": {
-            "id": {
-              "type": "string",
-              "description": "Optional unique snake_case identifier for the plugin (e.g. 'crypto_market_pulse'). Defaults to sanitized title."
-            },
-            "emoji": {
-              "type": "string",
-              "description": "A single representative emoji (e.g. '📊', '⚡', '🔍'). Defaults to '⚙️'."
-            },
-            "title": {
-              "type": "string",
-              "description": "The user-facing title of the custom Gemini Chat Hub plugin."
-            },
-            "author": {
-              "type": "string",
-              "description": "Plugin author name."
-            },
-            "iconURL": {
-              "type": "string",
-              "description": "Optional URL to an icon image or SVG (e.g. Lucide Iconify URL)."
-            },
-            "version": {
-              "type": "string",
-              "description": "Plugin version string, e.g. '1.0.0'."
-            },
-            "functions": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "name",
-                  "label",
-                  "description",
-                  "implementationType"
-                ],
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "description": "For 'javascript' type: The JavaScript function body. Has access to params, userSettings, resources, storage, workspace, vault, fetch, console, timers, etc."
-                  },
-                  "name": {
-                    "type": "string",
-                    "description": "The function identifier in snake_case (e.g. 'fetch_stock_quote')."
-                  },
-                  "label": {
-                    "type": "string",
-                    "description": "User-facing label for the function in the UI."
-                  },
-                  "httpUrl": {
-                    "type": "string",
-                    "description": "For 'http' type: Target API URL. Supports {paramName} and {{VAULT:SECRET_NAME}} interpolation."
-                  },
-                  "httpBody": {
-                    "type": "string",
-                    "description": "Stringified JSON or text of request body, supporting variable/vault interpolation."
-                  },
-                  "httpMethod": {
-                    "enum": [
-                      "GET",
-                      "POST",
-                      "PUT",
-                      "DELETE",
-                      "PATCH"
-                    ],
-                    "type": "string",
-                    "description": "HTTP request method."
-                  },
-                  "outputType": {
-                    "enum": [
-                      "respond_to_ai",
-                      "render_markdown",
-                      "display_html_to_user",
-                      "card"
-                    ],
-                    "type": "string",
-                    "description": "Output display destination: 'respond_to_ai' (default: passes to model), 'render_markdown' (skips model, renders markdown), 'display_html_to_user' (interactive HTML canvas), or 'card'."
-                  },
-                  "parameters": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "name",
-                        "type",
-                        "description"
-                      ],
-                      "properties": {
-                        "enum": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          },
-                          "description": "Allowed string enum values."
-                        },
-                        "name": {
-                          "type": "string",
-                          "description": "Parameter key name in snake_case."
-                        },
-                        "type": {
-                          "enum": [
-                            "string",
-                            "number",
-                            "boolean",
-                            "array",
-                            "object"
-                          ],
-                          "type": "string",
-                          "description": "Data type."
-                        },
-                        "required": {
-                          "type": "boolean",
-                          "description": "Whether the parameter is required."
-                        },
-                        "itemsType": {
-                          "type": "string",
-                          "description": "If type is 'array', the data type of items (e.g. 'string')."
-                        },
-                        "description": {
-                          "type": "string",
-                          "description": "Description and format requirements for the LLM."
-                        },
-                        "defaultValue": {
-                          "type": "string",
-                          "description": "Default fallback value."
-                        }
-                      }
-                    },
-                    "description": "Function arguments passed by the model."
-                  },
-                  "description": {
-                    "type": "string",
-                    "description": "Detailed instructions directed at Gemini explaining when and why to trigger this tool."
-                  },
-                  "httpHeaders": {
-                    "type": "string",
-                    "description": "Stringified JSON of request headers, supporting variable/vault interpolation."
-                  },
-                  "permissions": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "Permissions granted to this tool (e.g. ['local_storage', 'workspace', 'vault', 'read_user_message'])."
-                  },
-                  "templateString": {
-                    "type": "string",
-                    "description": "Post-processing template (Handlebars or JMESPath expression)."
-                  },
-                  "saveToWorkspace": {
-                    "type": "boolean",
-                    "description": "For 'http' type: If true, automatically saves the response payload to /workspace/in for Python or Bash processing."
-                  },
-                  "transformEngine": {
-                    "enum": [
-                      "handlebars",
-                      "jmespath"
-                    ],
-                    "type": "string",
-                    "description": "Post-processing engine (default: 'handlebars')."
-                  },
-                  "requestBodyFormat": {
-                    "enum": [
-                      "json",
-                      "form-data"
-                    ],
-                    "type": "string",
-                    "description": "Body encoding format."
-                  },
-                  "workspaceFilename": {
-                    "type": "string",
-                    "description": "Workspace filename template for auto-save (e.g. 'market_data_{timestamp}.json'). Supports variable interpolation."
-                  },
-                  "implementationType": {
-                    "enum": [
-                      "javascript",
-                      "http"
-                    ],
-                    "type": "string",
-                    "description": "Execution method: 'javascript' for Node.js server VM code, or 'http' for declarative web requests."
-                  }
-                }
-              },
-              "description": "The executable functions/tools provided by this plugin."
-            },
-            "localStorage": {
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "type": "boolean",
-                  "description": "Whether persistent key-value local storage is enabled (default: true)."
-                },
-                "initialData": {
-                  "type": "object",
-                  "description": "Optional initial key-value pairs to seed the plugin storage."
-                }
-              },
-              "description": "Configure persistent local data storage (backed by PostgreSQL + disk mirroring)."
-            },
-            "userSettings": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "name"
-                ],
-                "properties": {
-                  "enum": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "Valid options when type is 'enum'."
-                  },
-                  "name": {
-                    "type": "string",
-                    "description": "Variable key identifier (e.g. 'apiKey', 'baseUrl')."
-                  },
-                  "type": {
-                    "enum": [
-                      "text",
-                      "password",
-                      "number",
-                      "email",
-                      "enum"
-                    ],
-                    "type": "string",
-                    "description": "Input field widget type (default: 'text')."
-                  },
-                  "label": {
-                    "type": "string",
-                    "description": "User-facing label displayed next to the input field."
-                  },
-                  "required": {
-                    "type": "boolean",
-                    "description": "Whether the field must be populated to save."
-                  },
-                  "description": {
-                    "type": "string",
-                    "description": "Sub-label explanatory tooltip or instructions."
-                  },
-                  "placeholder": {
-                    "type": "string",
-                    "description": "Placeholder text inside the empty input box."
-                  },
-                  "vaultSecret": {
-                    "type": "string",
-                    "description": "Suggested Secret Vault key to link/autofill from (e.g. 'GITHUB_PAT')."
-                  },
-                  "defaultValue": {
-                    "type": "string",
-                    "description": "Fallback value if left empty."
-                  }
-                }
-              },
-              "description": "User configuration inputs (API keys, custom endpoints, preference toggles) configured in the UI."
-            },
-            "vaultSecrets": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "List of required or recommended Secret Vault keys (e.g. ['GITHUB_PAT', 'EXA_API_KEY'])."
-            },
-            "contextPrompt": {
-              "type": "string",
-              "description": "System instruction context injected persistently into Gemini system prompt whenever this plugin is active. Supports {settingName} variable interpolation."
-            },
-            "workspaceAccess": {
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "type": "boolean",
-                  "description": "Whether access to the code execution workspace is enabled (default: true)."
-                },
-                "allowedDirectories": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Allowed subdirectories: ['in', 'out', 'tmp']."
-                }
-              },
-              "description": "Configure code execution environment workspace bridge (/workspace/in, out, tmp) for inter-op with Python, Bash, and Bun."
-            },
-            "overviewMarkdown": {
-              "type": "string",
-              "description": "Comprehensive documentation shown in the plugin details modal. Supports Markdown tables, lists, and formatting."
-            }
-          }
-        },
-        "description": "Compiles structured user parameters, script logic, and API calls into a perfectly escaped, valid, importable Gemini Chat Hub plugin JSON payload. Supports persistent local storage, code execution workspace bridging (/workspace/in, /workspace/out, /workspace/tmp), Secret Vault integration, and Node.js VM server-side execution with zero CORS boundaries. IMPORTANT: This function output is rendered directly to the user screen as Markdown. You do NOT need to repeat or duplicate the JSON in your response; simply confirm that it was generated."
-      },
-      "openaiSpec": {
-        "name": "compile_gemini_chat_hub_plugin_json",
-        "parameters": {
-          "type": "object",
-          "required": [
-            "title",
-            "functions"
-          ],
-          "properties": {
-            "id": {
-              "type": "string",
-              "description": "Optional unique snake_case identifier for the plugin (e.g. 'crypto_market_pulse'). Defaults to sanitized title."
-            },
-            "emoji": {
-              "type": "string",
-              "description": "A single representative emoji (e.g. '📊', '⚡', '🔍'). Defaults to '⚙️'."
-            },
-            "title": {
-              "type": "string",
-              "description": "The user-facing title of the custom Gemini Chat Hub plugin."
-            },
-            "author": {
-              "type": "string",
-              "description": "Plugin author name."
-            },
-            "iconURL": {
-              "type": "string",
-              "description": "Optional URL to an icon image or SVG (e.g. Lucide Iconify URL)."
-            },
-            "version": {
-              "type": "string",
-              "description": "Plugin version string, e.g. '1.0.0'."
-            },
-            "functions": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "name",
-                  "label",
-                  "description",
-                  "implementationType"
-                ],
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "description": "For 'javascript' type: The JavaScript function body. Has access to params, userSettings, resources, storage, workspace, vault, fetch, console, timers, etc."
-                  },
-                  "name": {
-                    "type": "string",
-                    "description": "The function identifier in snake_case (e.g. 'fetch_stock_quote')."
-                  },
-                  "label": {
-                    "type": "string",
-                    "description": "User-facing label for the function in the UI."
-                  },
-                  "httpUrl": {
-                    "type": "string",
-                    "description": "For 'http' type: Target API URL. Supports {paramName} and {{VAULT:SECRET_NAME}} interpolation."
-                  },
-                  "httpBody": {
-                    "type": "string",
-                    "description": "Stringified JSON or text of request body, supporting variable/vault interpolation."
-                  },
-                  "httpMethod": {
-                    "enum": [
-                      "GET",
-                      "POST",
-                      "PUT",
-                      "DELETE",
-                      "PATCH"
-                    ],
-                    "type": "string",
-                    "description": "HTTP request method."
-                  },
-                  "outputType": {
-                    "enum": [
-                      "respond_to_ai",
-                      "render_markdown",
-                      "display_html_to_user",
-                      "card"
-                    ],
-                    "type": "string",
-                    "description": "Output display destination: 'respond_to_ai' (default: passes to model), 'render_markdown' (skips model, renders markdown), 'display_html_to_user' (interactive HTML canvas), or 'card'."
-                  },
-                  "parameters": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "name",
-                        "type",
-                        "description"
-                      ],
-                      "properties": {
-                        "enum": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          },
-                          "description": "Allowed string enum values."
-                        },
-                        "name": {
-                          "type": "string",
-                          "description": "Parameter key name in snake_case."
-                        },
-                        "type": {
-                          "enum": [
-                            "string",
-                            "number",
-                            "boolean",
-                            "array",
-                            "object"
-                          ],
-                          "type": "string",
-                          "description": "Data type."
-                        },
-                        "required": {
-                          "type": "boolean",
-                          "description": "Whether the parameter is required."
-                        },
-                        "itemsType": {
-                          "type": "string",
-                          "description": "If type is 'array', the data type of items (e.g. 'string')."
-                        },
-                        "description": {
-                          "type": "string",
-                          "description": "Description and format requirements for the LLM."
-                        },
-                        "defaultValue": {
-                          "type": "string",
-                          "description": "Default fallback value."
-                        }
-                      }
-                    },
-                    "description": "Function arguments passed by the model."
-                  },
-                  "description": {
-                    "type": "string",
-                    "description": "Detailed instructions directed at Gemini explaining when and why to trigger this tool."
-                  },
-                  "httpHeaders": {
-                    "type": "string",
-                    "description": "Stringified JSON of request headers, supporting variable/vault interpolation."
-                  },
-                  "permissions": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "Permissions granted to this tool (e.g. ['local_storage', 'workspace', 'vault', 'read_user_message'])."
-                  },
-                  "templateString": {
-                    "type": "string",
-                    "description": "Post-processing template (Handlebars or JMESPath expression)."
-                  },
-                  "saveToWorkspace": {
-                    "type": "boolean",
-                    "description": "For 'http' type: If true, automatically saves the response payload to /workspace/in for Python or Bash processing."
-                  },
-                  "transformEngine": {
-                    "enum": [
-                      "handlebars",
-                      "jmespath"
-                    ],
-                    "type": "string",
-                    "description": "Post-processing engine (default: 'handlebars')."
-                  },
-                  "requestBodyFormat": {
-                    "enum": [
-                      "json",
-                      "form-data"
-                    ],
-                    "type": "string",
-                    "description": "Body encoding format."
-                  },
-                  "workspaceFilename": {
-                    "type": "string",
-                    "description": "Workspace filename template for auto-save (e.g. 'market_data_{timestamp}.json'). Supports variable interpolation."
-                  },
-                  "implementationType": {
-                    "enum": [
-                      "javascript",
-                      "http"
-                    ],
-                    "type": "string",
-                    "description": "Execution method: 'javascript' for Node.js server VM code, or 'http' for declarative web requests."
-                  }
-                }
-              },
-              "description": "The executable functions/tools provided by this plugin."
-            },
-            "localStorage": {
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "type": "boolean",
-                  "description": "Whether persistent key-value local storage is enabled (default: true)."
-                },
-                "initialData": {
-                  "type": "object",
-                  "description": "Optional initial key-value pairs to seed the plugin storage."
-                }
-              },
-              "description": "Configure persistent local data storage (backed by PostgreSQL + disk mirroring)."
-            },
-            "userSettings": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "name"
-                ],
-                "properties": {
-                  "enum": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "Valid options when type is 'enum'."
-                  },
-                  "name": {
-                    "type": "string",
-                    "description": "Variable key identifier (e.g. 'apiKey', 'baseUrl')."
-                  },
-                  "type": {
-                    "enum": [
-                      "text",
-                      "password",
-                      "number",
-                      "email",
-                      "enum"
-                    ],
-                    "type": "string",
-                    "description": "Input field widget type (default: 'text')."
-                  },
-                  "label": {
-                    "type": "string",
-                    "description": "User-facing label displayed next to the input field."
-                  },
-                  "required": {
-                    "type": "boolean",
-                    "description": "Whether the field must be populated to save."
-                  },
-                  "description": {
-                    "type": "string",
-                    "description": "Sub-label explanatory tooltip or instructions."
-                  },
-                  "placeholder": {
-                    "type": "string",
-                    "description": "Placeholder text inside the empty input box."
-                  },
-                  "vaultSecret": {
-                    "type": "string",
-                    "description": "Suggested Secret Vault key to link/autofill from (e.g. 'GITHUB_PAT')."
-                  },
-                  "defaultValue": {
-                    "type": "string",
-                    "description": "Fallback value if left empty."
-                  }
-                }
-              },
-              "description": "User configuration inputs (API keys, custom endpoints, preference toggles) configured in the UI."
-            },
-            "vaultSecrets": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "List of required or recommended Secret Vault keys (e.g. ['GITHUB_PAT', 'EXA_API_KEY'])."
-            },
-            "contextPrompt": {
-              "type": "string",
-              "description": "System instruction context injected persistently into Gemini system prompt whenever this plugin is active. Supports {settingName} variable interpolation."
-            },
-            "workspaceAccess": {
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "type": "boolean",
-                  "description": "Whether access to the code execution workspace is enabled (default: true)."
-                },
-                "allowedDirectories": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Allowed subdirectories: ['in', 'out', 'tmp']."
-                }
-              },
-              "description": "Configure code execution environment workspace bridge (/workspace/in, out, tmp) for inter-op with Python, Bash, and Bun."
-            },
-            "overviewMarkdown": {
-              "type": "string",
-              "description": "Comprehensive documentation shown in the plugin details modal. Supports Markdown tables, lists, and formatting."
-            }
-          }
-        },
-        "description": "Compiles structured user parameters, script logic, and API calls into a perfectly escaped, valid, importable Gemini Chat Hub plugin JSON payload. Supports persistent local storage, code execution workspace bridging (/workspace/in, /workspace/out, /workspace/tmp), Secret Vault integration, and Node.js VM server-side execution with zero CORS boundaries. IMPORTANT: This function output is rendered directly to the user screen as Markdown. You do NOT need to repeat or duplicate the JSON in your response; simply confirm that it was generated."
-      },
-      "outputType": "render_markdown",
-      "permissions": [
-        "local_storage",
-        "workspace",
-        "vault"
-      ],
-      "javascript_code": "async function compile_gemini_chat_hub_plugin_json(params, userSettings, resources) {\n  function generateUUID() {\n    try {\n      return crypto.randomUUID();\n    } catch (e) {\n      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {\n        const r = Math.random() * 16 | 0;\n        const v = c === 'x' ? r : (r & 0x03 | 0x08);\n        return v.toString(16);\n      });\n    }\n  }\n\n  function ensureString(val) {\n    if (val === undefined || val === null) return \"\";\n    if (typeof val === \"object\") {\n      return JSON.stringify(val, null, 2);\n    }\n    return String(val);\n  }\n\n  try {\n    const pluginTitle = params.title || params.name || \"Custom Plugin\";\n    const pluginId = params.id || pluginTitle.toLowerCase().replace(/[^a-z0-9_]/g, \"_\");\n    const pluginUUID = generateUUID();\n\n    const finalUserSettings = [];\n\n    if (params.userSettings && Array.isArray(params.userSettings)) {\n      params.userSettings.forEach(setting => {\n        const s = {\n          name: setting.name,\n          type: setting.type || \"text\",\n          label: setting.label || setting.name,\n          required: setting.required !== false,\n          description: setting.description || \"\"\n        };\n        if (setting.placeholder) s.placeholder = setting.placeholder;\n        if (setting.type === \"enum\" && (setting.enum || setting.values)) {\n          s.values = setting.enum || setting.values;\n        }\n        if (setting.defaultValue !== undefined) {\n          s.defaultValue = setting.defaultValue;\n        }\n        if (setting.vaultSecret) {\n          s.vaultSecret = setting.vaultSecret;\n        }\n        finalUserSettings.push(s);\n      });\n    }\n\n    const pluginFunctions = [];\n    if (params.functions && Array.isArray(params.functions)) {\n      params.functions.forEach(fn => {\n        const funcUUID = generateUUID();\n        \n        const requiredParams = [];\n        const properties = {};\n        \n        if (fn.parameters && Array.isArray(fn.parameters)) {\n          fn.parameters.forEach(p => {\n            properties[p.name] = {\n              type: p.type || \"string\",\n              description: p.description || \"\"\n            };\n            if (p.type === \"array\" && p.itemsType) {\n              properties[p.name].items = { type: p.itemsType };\n            }\n            if ((p.enum || p.values) && Array.isArray(p.enum || p.values)) {\n              properties[p.name].enum = p.enum || p.values;\n            }\n            if (p.required) {\n              requiredParams.push(p.name);\n            }\n          });\n        }\n\n        const openaiSpec = {\n          name: fn.name,\n          description: fn.description || \"\",\n          parameters: {\n            type: \"object\",\n            properties: properties\n          }\n        };\n\n        if (requiredParams.length > 0) {\n          openaiSpec.parameters.required = requiredParams;\n        }\n\n        const compiledFunc = {\n          id: funcUUID,\n          name: fn.label || fn.name,\n          implementationType: fn.implementationType || \"javascript\",\n          outputType: fn.outputType || \"respond_to_ai\",\n          openaiSpec: openaiSpec,\n          permissions: Array.isArray(fn.permissions) && fn.permissions.length > 0 \n            ? fn.permissions \n            : [\"local_storage\", \"workspace\", \"vault\"]\n        };\n\n        if (fn.implementationType === \"javascript\") {\n          compiledFunc.code = fn.code || \"\";\n        } else if (fn.implementationType === \"http\") {\n          const headersStr = ensureString(fn.httpHeaders);\n          const bodyStr = ensureString(fn.httpBody);\n          const hasHeaders = !!headersStr && headersStr.trim() !== \"\" && headersStr.trim() !== \"{}\";\n          const hasBody = !!bodyStr && bodyStr.trim() !== \"\";\n          \n          compiledFunc.httpAction = {\n            id: generateUUID(),\n            url: fn.httpUrl || \"\",\n            name: \"\",\n            method: (fn.httpMethod || \"GET\").toUpperCase(),\n            hasHeaders: hasHeaders,\n            requestHeaders: hasHeaders ? headersStr : \"\",\n            hasBody: hasBody,\n            requestBody: hasBody ? bodyStr : \"\",\n            requestBodyFormat: fn.requestBodyFormat || \"json\",\n            save_to_workspace: !!fn.saveToWorkspace,\n            workspace_filename: fn.workspaceFilename || \"\"\n          };\n\n          if (fn.templateString) {\n            compiledFunc.httpAction.hasResultTransform = true;\n            compiledFunc.httpAction.resultTransform = {\n              engine: fn.transformEngine || \"handlebars\",\n              templateString: fn.templateString\n            };\n          }\n        }\n\n        pluginFunctions.push(compiledFunc);\n      });\n    }\n\n    const localStorageConfig = params.localStorage !== undefined \n      ? params.localStorage \n      : { enabled: true, initialData: {} };\n\n    const workspaceAccessConfig = params.workspaceAccess !== undefined \n      ? params.workspaceAccess \n      : { enabled: true, allowedDirectories: [\"in\", \"out\", \"tmp\"] };\n\n    const vaultSecretsList = Array.isArray(params.vaultSecrets) \n      ? params.vaultSecrets \n      : [];\n\n    const finalPlugin = { \n      id: pluginId,\n      uuid: pluginUUID,\n      emoji: params.emoji || \"⚙️\",\n      title: pluginTitle,\n      name: pluginTitle,\n      iconURL: params.iconURL || \"https://api.iconify.design/lucide:blocks.svg\",\n      icon_url: params.iconURL || \"https://api.iconify.design/lucide:blocks.svg\",\n      version: params.version || \"2.0.0\",\n      author: params.author || \"Gemini Chat Hub\",\n      userSettings: finalUserSettings,\n      user_settings: finalUserSettings,\n      pluginFunctions: pluginFunctions,\n      functions: pluginFunctions,\n      contextPrompt: params.contextPrompt || \"\",\n      context_prompt: params.contextPrompt || \"\",\n      localStorage: localStorageConfig,\n      workspaceAccess: workspaceAccessConfig,\n      vaultSecrets: vaultSecretsList,\n      overviewMarkdown: params.overviewMarkdown || (\"# \" + pluginTitle + \"\\n\\nCustom Gemini Chat Hub plugin.\"),\n      authenticationType: \"AUTH_TYPE_NONE\"\n    };\n\n    const jsonString = JSON.stringify(finalPlugin, null, 2);\n    \n    return \"### ⚙️ Gemini Chat Hub Plugin Compiled Successfully!\\n\" +\n      \"Here is the JSON payload for **\" + finalPlugin.title + \"**, ready to import into Gemini Chat Hub.\\n\\n\" +\n      \"#### Capabilities Enabled:\\n\" +\n      \"- 💾 **Persistent Local Storage**: \" + (finalPlugin.localStorage?.enabled ? \"Active (PostgreSQL + Disk Mirroring)\" : \"Disabled\") + \"\\n\" +\n      \"- 🖥️ **Workspace Code Execution Bridge**: \" + (finalPlugin.workspaceAccess?.enabled ? \"Active (/workspace/in, out, tmp)\" : \"Disabled\") + \"\\n\" +\n      \"- 🔑 **Secret Vault Access**: \" + (finalPlugin.vaultSecrets?.length ? finalPlugin.vaultSecrets.join(\", \") : \"None requested\") + \"\\n\" +\n      \"- ⚡ **Node.js VM Execution**: Direct server fetch (Zero CORS restrictions, 90s timeout)\\n\\n\" +\n      \"To install this in Gemini Chat Hub:\\n\" +\n      \"1. Hover over the JSON code block below and click **Copy**.\\n\" +\n      \"2. Open the **Plugins** dialog (click the puzzle/blocks icon in the header or sidebar).\\n\" +\n      \"3. Switch to the **Import Plugin JSON** tab.\\n\" +\n      \"4. Paste the JSON and click **Import and Register Plugin**.\\n\" +\n      \"5. If User Settings or Vault Secrets are configured, click the **Settings** gear to configure them!\\n\\n\" +\n      \"\\n\\n\" +\n      String.fromCharCode(96).repeat(3) + \"json\\n\" + jsonString + \"\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\\n\" +\n      \"---\\n*Compiled using Gemini Chat Hub Plugin Generator.*\n\n  } catch (err) {\n    return \"### ❌ Compilation Error\\nAn error occurred while compiling your plugin:\\n\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\" + err.message + \"\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\";\n  }\n}",
-      "implementationType": "javascript",
-      "output_destination": "markdown",
-      "implementation_type": "javascript"
-    }
-  ],
-  "description": "# Gemini Chat Hub Plugin Generator\n\nThis utility dynamically builds, validates, and serializes production-grade custom plugin manifests for **Gemini Chat Hub**.\n\n### Key Features Covered:\n- 💾 **Persistent Local Storage**: Generates schemas and storage helpers (`await storage.get()`, `await storage.set()`) backed by PostgreSQL and disk mirroring.\n- 🖥️ **Workspace Code Execution Bridge**: Bridges data directly to the resident Python IPython kernel, persistent Bash shell, and Polyglot Bun runtime via `workspace.writeFile()`, `workspace.saveData()`, and `workspace.readFile()` in `/workspace/in/`, `/workspace/out/`, and `/workspace/tmp/`.\n- 🔑 **Secret Vault Access**: Integrates with the Secret Vault (`vault.getSecret()`, `vault.listSecrets()`, `{{VAULT:NAME}}`) with automatic active output redaction.\n- ⚡ **Node.js VM Execution**: Zero CORS restrictions, 90-second timeout, native Web and Node globals.\n- 📥 **HTTP Actions with Workspace Auto-Save**: Pipe API responses directly into code execution storage.\n\n### How It Works:\n1. Describe the custom plugin you want to build.\n2. The model calls `compile_gemini_chat_hub_plugin_json` with complete function logic, settings, and permissions.\n3. The tool generates standard RFC 4122 UUIDs, formats the manifest, and renders a ready-to-import JSON code block directly in the chat.\n4. Copy the JSON and paste it into **Plugins** -> **Import Plugin JSON**!",
+  "syncedAt": "2026-09-16T14:08:20.633Z",
+  "createdAt": "2026-09-16T14:08:20.653Z",
+  "deletedAt": null,
+  "userSettings": [],
+  "user_settings": [],
   "localStorage": {
     "enabled": true,
     "initialData": {}
   },
-  "userSettings": [],
-  "vaultSecrets": [],
-  "user_settings": [],
-  "context_prompt": "",
-  "pluginFunctions": [
-    {
-      "code": "async function compile_gemini_chat_hub_plugin_json(params, userSettings, resources) {\n  function generateUUID() {\n    try {\n      return crypto.randomUUID();\n    } catch (e) {\n      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {\n        const r = Math.random() * 16 | 0;\n        const v = c === 'x' ? r : (r & 0x03 | 0x08);\n        return v.toString(16);\n      });\n    }\n  }\n\n  function ensureString(val) {\n    if (val === undefined || val === null) return \"\";\n    if (typeof val === \"object\") {\n      return JSON.stringify(val, null, 2);\n    }\n    return String(val);\n  }\n\n  try {\n    const pluginTitle = params.title || params.name || \"Custom Plugin\";\n    const pluginId = params.id || pluginTitle.toLowerCase().replace(/[^a-z0-9_]/g, \"_\");\n    const pluginUUID = generateUUID();\n\n    const finalUserSettings = [];\n\n    if (params.userSettings && Array.isArray(params.userSettings)) {\n      params.userSettings.forEach(setting => {\n        const s = {\n          name: setting.name,\n          type: setting.type || \"text\",\n          label: setting.label || setting.name,\n          required: setting.required !== false,\n          description: setting.description || \"\"\n        };\n        if (setting.placeholder) s.placeholder = setting.placeholder;\n        if (setting.type === \"enum\" && (setting.enum || setting.values)) {\n          s.values = setting.enum || setting.values;\n        }\n        if (setting.defaultValue !== undefined) {\n          s.defaultValue = setting.defaultValue;\n        }\n        if (setting.vaultSecret) {\n          s.vaultSecret = setting.vaultSecret;\n        }\n        finalUserSettings.push(s);\n      });\n    }\n\n    const pluginFunctions = [];\n    if (params.functions && Array.isArray(params.functions)) {\n      params.functions.forEach(fn => {\n        const funcUUID = generateUUID();\n        \n        const requiredParams = [];\n        const properties = {};\n        \n        if (fn.parameters && Array.isArray(fn.parameters)) {\n          fn.parameters.forEach(p => {\n            properties[p.name] = {\n              type: p.type || \"string\",\n              description: p.description || \"\"\n            };\n            if (p.type === \"array\" && p.itemsType) {\n              properties[p.name].items = { type: p.itemsType };\n            }\n            if ((p.enum || p.values) && Array.isArray(p.enum || p.values)) {\n              properties[p.name].enum = p.enum || p.values;\n            }\n            if (p.required) {\n              requiredParams.push(p.name);\n            }\n          });\n        }\n\n        const openaiSpec = {\n          name: fn.name,\n          description: fn.description || \"\",\n          parameters: {\n            type: \"object\",\n            properties: properties\n          }\n        };\n\n        if (requiredParams.length > 0) {\n          openaiSpec.parameters.required = requiredParams;\n        }\n\n        const compiledFunc = {\n          id: funcUUID,\n          name: fn.label || fn.name,\n          implementationType: fn.implementationType || \"javascript\",\n          outputType: fn.outputType || \"respond_to_ai\",\n          openaiSpec: openaiSpec,\n          permissions: Array.isArray(fn.permissions) && fn.permissions.length > 0 \n            ? fn.permissions \n            : [\"local_storage\", \"workspace\", \"vault\"]\n        };\n\n        if (fn.implementationType === \"javascript\") {\n          compiledFunc.code = fn.code || \"\";\n        } else if (fn.implementationType === \"http\") {\n          const headersStr = ensureString(fn.httpHeaders);\n          const bodyStr = ensureString(fn.httpBody);\n          const hasHeaders = !!headersStr && headersStr.trim() !== \"\" && headersStr.trim() !== \"{}\";\n          const hasBody = !!bodyStr && bodyStr.trim() !== \"\";\n          \n          compiledFunc.httpAction = {\n            id: generateUUID(),\n            url: fn.httpUrl || \"\",\n            name: \"\",\n            method: (fn.httpMethod || \"GET\").toUpperCase(),\n            hasHeaders: hasHeaders,\n            requestHeaders: hasHeaders ? headersStr : \"\",\n            hasBody: hasBody,\n            requestBody: hasBody ? bodyStr : \"\",\n            requestBodyFormat: fn.requestBodyFormat || \"json\",\n            save_to_workspace: !!fn.saveToWorkspace,\n            workspace_filename: fn.workspaceFilename || \"\"\n          };\n\n          if (fn.templateString) {\n            compiledFunc.httpAction.hasResultTransform = true;\n            compiledFunc.httpAction.resultTransform = {\n              engine: fn.transformEngine || \"handlebars\",\n              templateString: fn.templateString\n            };\n          }\n        }\n\n        pluginFunctions.push(compiledFunc);\n      });\n    }\n\n    const localStorageConfig = params.localStorage !== undefined \n      ? params.localStorage \n      : { enabled: true, initialData: {} };\n\n    const workspaceAccessConfig = params.workspaceAccess !== undefined \n      ? params.workspaceAccess \n      : { enabled: true, allowedDirectories: [\"in\", \"out\", \"tmp\"] };\n\n    const vaultSecretsList = Array.isArray(params.vaultSecrets) \n      ? params.vaultSecrets \n      : [];\n\n    const finalPlugin = { \n      id: pluginId,\n      uuid: pluginUUID,\n      emoji: params.emoji || \"⚙️\",\n      title: pluginTitle,\n      name: pluginTitle,\n      iconURL: params.iconURL || \"https://api.iconify.design/lucide:blocks.svg\",\n      icon_url: params.iconURL || \"https://api.iconify.design/lucide:blocks.svg\",\n      version: params.version || \"2.0.0\",\n      author: params.author || \"Gemini Chat Hub\",\n      userSettings: finalUserSettings,\n      user_settings: finalUserSettings,\n      pluginFunctions: pluginFunctions,\n      functions: pluginFunctions,\n      contextPrompt: params.contextPrompt || \"\",\n      context_prompt: params.contextPrompt || \"\",\n      localStorage: localStorageConfig,\n      workspaceAccess: workspaceAccessConfig,\n      vaultSecrets: vaultSecretsList,\n      overviewMarkdown: params.overviewMarkdown || (\"# \" + pluginTitle + \"\\n\\nCustom Gemini Chat Hub plugin.\"),\n      authenticationType: \"AUTH_TYPE_NONE\"\n    };\n\n    const jsonString = JSON.stringify(finalPlugin, null, 2);\n    \n    return \"### ⚙️ Gemini Chat Hub Plugin Compiled Successfully!\\n\" +\n      \"Here is the JSON payload for **\" + finalPlugin.title + \"**, ready to import into Gemini Chat Hub.\\n\\n\" +\n      \"#### Capabilities Enabled:\\n\" +\n      \"- 💾 **Persistent Local Storage**: \" + (finalPlugin.localStorage?.enabled ? \"Active (PostgreSQL + Disk Mirroring)\" : \"Disabled\") + \"\\n\" +\n      \"- 🖥️ **Workspace Code Execution Bridge**: \" + (finalPlugin.workspaceAccess?.enabled ? \"Active (/workspace/in, out, tmp)\" : \"Disabled\") + \"\\n\" +\n      \"- 🔑 **Secret Vault Access**: \" + (finalPlugin.vaultSecrets?.length ? finalPlugin.vaultSecrets.join(\", \") : \"None requested\") + \"\\n\" +\n      \"- ⚡ **Node.js VM Execution**: Direct server fetch (Zero CORS restrictions, 90s timeout)\\n\\n\" +\n      \"To install this in Gemini Chat Hub:\\n\" +\n      \"1. Hover over the JSON code block below and click **Copy**.\\n\" +\n      \"2. Open the **Plugins** dialog (click the puzzle/blocks icon in the header or sidebar).\\n\" +\n      \"3. Switch to the **Import Plugin JSON** tab.\\n\" +\n      \"4. Paste the JSON and click **Import and Register Plugin**.\\n\" +\n      \"5. If User Settings or Vault Secrets are configured, click the **Settings** gear to configure them!\\n\\n\" +\n      \"\\n\\n\" +\n      String.fromCharCode(96).repeat(3) + \"json\\n\" + jsonString + \"\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\\n\" +\n      \"---\\\\n*Compiled using Gemini Chat Hub Plugin Generator.*\\\\n\";\n\n  } catch (err) {\n    return \"### ❌ Compilation Error\\nAn error occurred while compiling your plugin:\\n\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\" + err.message + \"\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\";\n  }\n}",
-      "spec": {
-        "name": "compile_gemini_chat_hub_plugin_json",
-        "parameters": {
-          "type": "object",
-          "required": [
-            "title",
-            "functions"
-          ],
-          "properties": {
-            "id": {
-              "type": "string",
-              "description": "Optional unique snake_case identifier for the plugin (e.g. 'crypto_market_pulse'). Defaults to sanitized title."
-            },
-            "emoji": {
-              "type": "string",
-              "description": "A single representative emoji (e.g. '📊', '⚡', '🔍'). Defaults to '⚙️'."
-            },
-            "title": {
-              "type": "string",
-              "description": "The user-facing title of the custom Gemini Chat Hub plugin."
-            },
-            "author": {
-              "type": "string",
-              "description": "Plugin author name."
-            },
-            "iconURL": {
-              "type": "string",
-              "description": "Optional URL to an icon image or SVG (e.g. Lucide Iconify URL)."
-            },
-            "version": {
-              "type": "string",
-              "description": "Plugin version string, e.g. '1.0.0'."
-            },
-            "functions": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "name",
-                  "label",
-                  "description",
-                  "implementationType"
-                ],
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "description": "For 'javascript' type: The JavaScript function body. Has access to params, userSettings, resources, storage, workspace, vault, fetch, console, timers, etc."
-                  },
-                  "name": {
-                    "type": "string",
-                    "description": "The function identifier in snake_case (e.g. 'fetch_stock_quote')."
-                  },
-                  "label": {
-                    "type": "string",
-                    "description": "User-facing label for the function in the UI."
-                  },
-                  "httpUrl": {
-                    "type": "string",
-                    "description": "For 'http' type: Target API URL. Supports {paramName} and {{VAULT:SECRET_NAME}} interpolation."
-                  },
-                  "httpBody": {
-                    "type": "string",
-                    "description": "Stringified JSON or text of request body, supporting variable/vault interpolation."
-                  },
-                  "httpMethod": {
-                    "enum": [
-                      "GET",
-                      "POST",
-                      "PUT",
-                      "DELETE",
-                      "PATCH"
-                    ],
-                    "type": "string",
-                    "description": "HTTP request method."
-                  },
-                  "outputType": {
-                    "enum": [
-                      "respond_to_ai",
-                      "render_markdown",
-                      "display_html_to_user",
-                      "card"
-                    ],
-                    "type": "string",
-                    "description": "Output display destination: 'respond_to_ai' (default: passes to model), 'render_markdown' (skips model, renders markdown), 'display_html_to_user' (interactive HTML canvas), or 'card'."
-                  },
-                  "parameters": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "name",
-                        "type",
-                        "description"
-                      ],
-                      "properties": {
-                        "enum": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          },
-                          "description": "Allowed string enum values."
-                        },
-                        "name": {
-                          "type": "string",
-                          "description": "Parameter key name in snake_case."
-                        },
-                        "type": {
-                          "enum": [
-                            "string",
-                            "number",
-                            "boolean",
-                            "array",
-                            "object"
-                          ],
-                          "type": "string",
-                          "description": "Data type."
-                        },
-                        "required": {
-                          "type": "boolean",
-                          "description": "Whether the parameter is required."
-                        },
-                        "itemsType": {
-                          "type": "string",
-                          "description": "If type is 'array', the data type of items (e.g. 'string')."
-                        },
-                        "description": {
-                          "type": "string",
-                          "description": "Description and format requirements for the LLM."
-                        },
-                        "defaultValue": {
-                          "type": "string",
-                          "description": "Default fallback value."
-                        }
-                      }
-                    },
-                    "description": "Function arguments passed by the model."
-                  },
-                  "description": {
-                    "type": "string",
-                    "description": "Detailed instructions directed at Gemini explaining when and why to trigger this tool."
-                  },
-                  "httpHeaders": {
-                    "type": "string",
-                    "description": "Stringified JSON of request headers, supporting variable/vault interpolation."
-                  },
-                  "permissions": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "Permissions granted to this tool (e.g. ['local_storage', 'workspace', 'vault', 'read_user_message'])."
-                  },
-                  "templateString": {
-                    "type": "string",
-                    "description": "Post-processing template (Handlebars or JMESPath expression)."
-                  },
-                  "saveToWorkspace": {
-                    "type": "boolean",
-                    "description": "For 'http' type: If true, automatically saves the response payload to /workspace/in for Python or Bash processing."
-                  },
-                  "transformEngine": {
-                    "enum": [
-                      "handlebars",
-                      "jmespath"
-                    ],
-                    "type": "string",
-                    "description": "Post-processing engine (default: 'handlebars')."
-                  },
-                  "requestBodyFormat": {
-                    "enum": [
-                      "json",
-                      "form-data"
-                    ],
-                    "type": "string",
-                    "description": "Body encoding format."
-                  },
-                  "workspaceFilename": {
-                    "type": "string",
-                    "description": "Workspace filename template for auto-save (e.g. 'market_data_{timestamp}.json'). Supports variable interpolation."
-                  },
-                  "implementationType": {
-                    "enum": [
-                      "javascript",
-                      "http"
-                    ],
-                    "type": "string",
-                    "description": "Execution method: 'javascript' for Node.js server VM code, or 'http' for declarative web requests."
-                  }
-                }
-              },
-              "description": "The executable functions/tools provided by this plugin."
-            },
-            "localStorage": {
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "type": "boolean",
-                  "description": "Whether persistent key-value local storage is enabled (default: true)."
-                },
-                "initialData": {
-                  "type": "object",
-                  "description": "Optional initial key-value pairs to seed the plugin storage."
-                }
-              },
-              "description": "Configure persistent local data storage (backed by PostgreSQL + disk mirroring)."
-            },
-            "userSettings": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "name"
-                ],
-                "properties": {
-                  "enum": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "Valid options when type is 'enum'."
-                  },
-                  "name": {
-                    "type": "string",
-                    "description": "Variable key identifier (e.g. 'apiKey', 'baseUrl')."
-                  },
-                  "type": {
-                    "enum": [
-                      "text",
-                      "password",
-                      "number",
-                      "email",
-                      "enum"
-                    ],
-                    "type": "string",
-                    "description": "Input field widget type (default: 'text')."
-                  },
-                  "label": {
-                    "type": "string",
-                    "description": "User-facing label displayed next to the input field."
-                  },
-                  "required": {
-                    "type": "boolean",
-                    "description": "Whether the field must be populated to save."
-                  },
-                  "description": {
-                    "type": "string",
-                    "description": "Sub-label explanatory tooltip or instructions."
-                  },
-                  "placeholder": {
-                    "type": "string",
-                    "description": "Placeholder text inside the empty input box."
-                  },
-                  "vaultSecret": {
-                    "type": "string",
-                    "description": "Suggested Secret Vault key to link/autofill from (e.g. 'GITHUB_PAT')."
-                  },
-                  "defaultValue": {
-                    "type": "string",
-                    "description": "Fallback value if left empty."
-                  }
-                }
-              },
-              "description": "User configuration inputs (API keys, custom endpoints, preference toggles) configured in the UI."
-            },
-            "vaultSecrets": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "List of required or recommended Secret Vault keys (e.g. ['GITHUB_PAT', 'EXA_API_KEY'])."
-            },
-            "contextPrompt": {
-              "type": "string",
-              "description": "System instruction context injected persistently into Gemini system prompt whenever this plugin is active. Supports {settingName} variable interpolation."
-            },
-            "workspaceAccess": {
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "type": "boolean",
-                  "description": "Whether access to the code execution workspace is enabled (default: true)."
-                },
-                "allowedDirectories": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Allowed subdirectories: ['in', 'out', 'tmp']."
-                }
-              },
-              "description": "Configure code execution environment workspace bridge (/workspace/in, out, tmp) for inter-op with Python, Bash, and Bun."
-            },
-            "overviewMarkdown": {
-              "type": "string",
-              "description": "Comprehensive documentation shown in the plugin details modal. Supports Markdown tables, lists, and formatting."
-            }
-          }
-        },
-        "description": "Compiles structured user parameters, script logic, and API calls into a perfectly escaped, valid, importable Gemini Chat Hub plugin JSON payload. Supports persistent local storage, code execution workspace bridging (/workspace/in, /workspace/out, /workspace/tmp), Secret Vault integration, and Node.js VM server-side execution with zero CORS boundaries. IMPORTANT: This function output is rendered directly to the user screen as Markdown. You do NOT need to repeat or duplicate the JSON in your response; simply confirm that it was generated."
-      },
-      "openaiSpec": {
-        "name": "compile_gemini_chat_hub_plugin_json",
-        "parameters": {
-          "type": "object",
-          "required": [
-            "title",
-            "functions"
-          ],
-          "properties": {
-            "id": {
-              "type": "string",
-              "description": "Optional unique snake_case identifier for the plugin (e.g. 'crypto_market_pulse'). Defaults to sanitized title."
-            },
-            "emoji": {
-              "type": "string",
-              "description": "A single representative emoji (e.g. '📊', '⚡', '🔍'). Defaults to '⚙️'."
-            },
-            "title": {
-              "type": "string",
-              "description": "The user-facing title of the custom Gemini Chat Hub plugin."
-            },
-            "author": {
-              "type": "string",
-              "description": "Plugin author name."
-            },
-            "iconURL": {
-              "type": "string",
-              "description": "Optional URL to an icon image or SVG (e.g. Lucide Iconify URL)."
-            },
-            "version": {
-              "type": "string",
-              "description": "Plugin version string, e.g. '1.0.0'."
-            },
-            "functions": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "name",
-                  "label",
-                  "description",
-                  "implementationType"
-                ],
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "description": "For 'javascript' type: The JavaScript function body. Has access to params, userSettings, resources, storage, workspace, vault, fetch, console, timers, etc."
-                  },
-                  "name": {
-                    "type": "string",
-                    "description": "The function identifier in snake_case (e.g. 'fetch_stock_quote')."
-                  },
-                  "label": {
-                    "type": "string",
-                    "description": "User-facing label for the function in the UI."
-                  },
-                  "httpUrl": {
-                    "type": "string",
-                    "description": "For 'http' type: Target API URL. Supports {paramName} and {{VAULT:SECRET_NAME}} interpolation."
-                  },
-                  "httpBody": {
-                    "type": "string",
-                    "description": "Stringified JSON or text of request body, supporting variable/vault interpolation."
-                  },
-                  "httpMethod": {
-                    "enum": [
-                      "GET",
-                      "POST",
-                      "PUT",
-                      "DELETE",
-                      "PATCH"
-                    ],
-                    "type": "string",
-                    "description": "HTTP request method."
-                  },
-                  "outputType": {
-                    "enum": [
-                      "respond_to_ai",
-                      "render_markdown",
-                      "display_html_to_user",
-                      "card"
-                    ],
-                    "type": "string",
-                    "description": "Output display destination: 'respond_to_ai' (default: passes to model), 'render_markdown' (skips model, renders markdown), 'display_html_to_user' (interactive HTML canvas), or 'card'."
-                  },
-                  "parameters": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "name",
-                        "type",
-                        "description"
-                      ],
-                      "properties": {
-                        "enum": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          },
-                          "description": "Allowed string enum values."
-                        },
-                        "name": {
-                          "type": "string",
-                          "description": "Parameter key name in snake_case."
-                        },
-                        "type": {
-                          "enum": [
-                            "string",
-                            "number",
-                            "boolean",
-                            "array",
-                            "object"
-                          ],
-                          "type": "string",
-                          "description": "Data type."
-                        },
-                        "required": {
-                          "type": "boolean",
-                          "description": "Whether the parameter is required."
-                        },
-                        "itemsType": {
-                          "type": "string",
-                          "description": "If type is 'array', the data type of items (e.g. 'string')."
-                        },
-                        "description": {
-                          "type": "string",
-                          "description": "Description and format requirements for the LLM."
-                        },
-                        "defaultValue": {
-                          "type": "string",
-                          "description": "Default fallback value."
-                        }
-                      }
-                    },
-                    "description": "Function arguments passed by the model."
-                  },
-                  "description": {
-                    "type": "string",
-                    "description": "Detailed instructions directed at Gemini explaining when and why to trigger this tool."
-                  },
-                  "httpHeaders": {
-                    "type": "string",
-                    "description": "Stringified JSON of request headers, supporting variable/vault interpolation."
-                  },
-                  "permissions": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "Permissions granted to this tool (e.g. ['local_storage', 'workspace', 'vault', 'read_user_message'])."
-                  },
-                  "templateString": {
-                    "type": "string",
-                    "description": "Post-processing template (Handlebars or JMESPath expression)."
-                  },
-                  "saveToWorkspace": {
-                    "type": "boolean",
-                    "description": "For 'http' type: If true, automatically saves the response payload to /workspace/in for Python or Bash processing."
-                  },
-                  "transformEngine": {
-                    "enum": [
-                      "handlebars",
-                      "jmespath"
-                    ],
-                    "type": "string",
-                    "description": "Post-processing engine (default: 'handlebars')."
-                  },
-                  "requestBodyFormat": {
-                    "enum": [
-                      "json",
-                      "form-data"
-                    ],
-                    "type": "string",
-                    "description": "Body encoding format."
-                  },
-                  "workspaceFilename": {
-                    "type": "string",
-                    "description": "Workspace filename template for auto-save (e.g. 'market_data_{timestamp}.json'). Supports variable interpolation."
-                  },
-                  "implementationType": {
-                    "enum": [
-                      "javascript",
-                      "http"
-                    ],
-                    "type": "string",
-                    "description": "Execution method: 'javascript' for Node.js server VM code, or 'http' for declarative web requests."
-                  }
-                }
-              },
-              "description": "The executable functions/tools provided by this plugin."
-            },
-            "localStorage": {
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "type": "boolean",
-                  "description": "Whether persistent key-value local storage is enabled (default: true)."
-                },
-                "initialData": {
-                  "type": "object",
-                  "description": "Optional initial key-value pairs to seed the plugin storage."
-                }
-              },
-              "description": "Configure persistent local data storage (backed by PostgreSQL + disk mirroring)."
-            },
-            "userSettings": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "name"
-                ],
-                "properties": {
-                  "enum": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "Valid options when type is 'enum'."
-                  },
-                  "name": {
-                    "type": "string",
-                    "description": "Variable key identifier (e.g. 'apiKey', 'baseUrl')."
-                  },
-                  "type": {
-                    "enum": [
-                      "text",
-                      "password",
-                      "number",
-                      "email",
-                      "enum"
-                    ],
-                    "type": "string",
-                    "description": "Input field widget type (default: 'text')."
-                  },
-                  "label": {
-                    "type": "string",
-                    "description": "User-facing label displayed next to the input field."
-                  },
-                  "required": {
-                    "type": "boolean",
-                    "description": "Whether the field must be populated to save."
-                  },
-                  "description": {
-                    "type": "string",
-                    "description": "Sub-label explanatory tooltip or instructions."
-                  },
-                  "placeholder": {
-                    "type": "string",
-                    "description": "Placeholder text inside the empty input box."
-                  },
-                  "vaultSecret": {
-                    "type": "string",
-                    "description": "Suggested Secret Vault key to link/autofill from (e.g. 'GITHUB_PAT')."
-                  },
-                  "defaultValue": {
-                    "type": "string",
-                    "description": "Fallback value if left empty."
-                  }
-                }
-              },
-              "description": "User configuration inputs (API keys, custom endpoints, preference toggles) configured in the UI."
-            },
-            "vaultSecrets": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "List of required or recommended Secret Vault keys (e.g. ['GITHUB_PAT', 'EXA_API_KEY'])."
-            },
-            "contextPrompt": {
-              "type": "string",
-              "description": "System instruction context injected persistently into Gemini system prompt whenever this plugin is active. Supports {settingName} variable interpolation."
-            },
-            "workspaceAccess": {
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "type": "boolean",
-                  "description": "Whether access to the code execution workspace is enabled (default: true)."
-                },
-                "allowedDirectories": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Allowed subdirectories: ['in', 'out', 'tmp']."
-                }
-              },
-              "description": "Configure code execution environment workspace bridge (/workspace/in, out, tmp) for inter-op with Python, Bash, and Bun."
-            },
-            "overviewMarkdown": {
-              "type": "string",
-              "description": "Comprehensive documentation shown in the plugin details modal. Supports Markdown tables, lists, and formatting."
-            }
-          }
-        },
-        "description": "Compiles structured user parameters, script logic, and API calls into a perfectly escaped, valid, importable Gemini Chat Hub plugin JSON payload. Supports persistent local storage, code execution workspace bridging (/workspace/in, /workspace/out, /workspace/tmp), Secret Vault integration, and Node.js VM server-side execution with zero CORS boundaries. IMPORTANT: This function output is rendered directly to the user screen as Markdown. You do NOT need to repeat or duplicate the JSON in your response; simply confirm that it was generated."
-      },
-      "outputType": "render_markdown",
-      "permissions": [
-        "local_storage",
-        "workspace",
-        "vault"
-      ],
-      "javascript_code": "async function compile_gemini_chat_hub_plugin_json(params, userSettings, resources) {\n  function generateUUID() {\n    try {\n      return crypto.randomUUID();\n    } catch (e) {\n      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {\n        const r = Math.random() * 16 | 0;\n        const v = c === 'x' ? r : (r & 0x03 | 0x08);\n        return v.toString(16);\n      });\n    }\n  }\n\n  function ensureString(val) {\n    if (val === undefined || val === null) return \"\";\n    if (typeof val === \"object\") {\n      return JSON.stringify(val, null, 2);\n    }\n    return String(val);\n  }\n\n  try {\n    const pluginTitle = params.title || params.name || \"Custom Plugin\";\n    const pluginId = params.id || pluginTitle.toLowerCase().replace(/[^a-z0-9_]/g, \"_\");\n    const pluginUUID = generateUUID();\n\n    const finalUserSettings = [];\n\n    if (params.userSettings && Array.isArray(params.userSettings)) {\n      params.userSettings.forEach(setting => {\n        const s = {\n          name: setting.name,\n          type: setting.type || \"text\",\n          label: setting.label || setting.name,\n          required: setting.required !== false,\n          description: setting.description || \"\"\n        };\n        if (setting.placeholder) s.placeholder = setting.placeholder;\n        if (setting.type === \"enum\" && (setting.enum || setting.values)) {\n          s.values = setting.enum || setting.values;\n        }\n        if (setting.defaultValue !== undefined) {\n          s.defaultValue = setting.defaultValue;\n        }\n        if (setting.vaultSecret) {\n          s.vaultSecret = setting.vaultSecret;\n        }\n        finalUserSettings.push(s);\n      });\n    }\n\n    const pluginFunctions = [];\n    if (params.functions && Array.isArray(params.functions)) {\n      params.functions.forEach(fn => {\n        const funcUUID = generateUUID();\n        \n        const requiredParams = [];\n        const properties = {};\n        \n        if (fn.parameters && Array.isArray(fn.parameters)) {\n          fn.parameters.forEach(p => {\n            properties[p.name] = {\n              type: p.type || \"string\",\n              description: p.description || \"\"\n            };\n            if (p.type === \"array\" && p.itemsType) {\n              properties[p.name].items = { type: p.itemsType };\n            }\n            if ((p.enum || p.values) && Array.isArray(p.enum || p.values)) {\n              properties[p.name].enum = p.enum || p.values;\n            }\n            if (p.required) {\n              requiredParams.push(p.name);\n            }\n          });\n        }\n\n        const openaiSpec = {\n          name: fn.name,\n          description: fn.description || \"\",\n          parameters: {\n            type: \"object\",\n            properties: properties\n          }\n        };\n\n        if (requiredParams.length > 0) {\n          openaiSpec.parameters.required = requiredParams;\n        }\n\n        const compiledFunc = {\n          id: funcUUID,\n          name: fn.label || fn.name,\n          implementationType: fn.implementationType || \"javascript\",\n          outputType: fn.outputType || \"respond_to_ai\",\n          openaiSpec: openaiSpec,\n          permissions: Array.isArray(fn.permissions) && fn.permissions.length > 0 \n            ? fn.permissions \n            : [\"local_storage\", \"workspace\", \"vault\"]\n        };\n\n        if (fn.implementationType === \"javascript\") {\n          compiledFunc.code = fn.code || \"\";\n        } else if (fn.implementationType === \"http\") {\n          const headersStr = ensureString(fn.httpHeaders);\n          const bodyStr = ensureString(fn.httpBody);\n          const hasHeaders = !!headersStr && headersStr.trim() !== \"\" && headersStr.trim() !== \"{}\";\n          const hasBody = !!bodyStr && bodyStr.trim() !== \"\";\n          \n          compiledFunc.httpAction = {\n            id: generateUUID(),\n            url: fn.httpUrl || \"\",\n            name: \"\",\n            method: (fn.httpMethod || \"GET\").toUpperCase(),\n            hasHeaders: hasHeaders,\n            requestHeaders: hasHeaders ? headersStr : \"\",\n            hasBody: hasBody,\n            requestBody: hasBody ? bodyStr : \"\",\n            requestBodyFormat: fn.requestBodyFormat || \"json\",\n            save_to_workspace: !!fn.saveToWorkspace,\n            workspace_filename: fn.workspaceFilename || \"\"\n          };\n\n          if (fn.templateString) {\n            compiledFunc.httpAction.hasResultTransform = true;\n            compiledFunc.httpAction.resultTransform = {\n              engine: fn.transformEngine || \"handlebars\",\n              templateString: fn.templateString\n            };\n          }\n        }\n\n        pluginFunctions.push(compiledFunc);\n      });\n    }\n\n    const localStorageConfig = params.localStorage !== undefined \n      ? params.localStorage \n      : { enabled: true, initialData: {} };\n\n    const workspaceAccessConfig = params.workspaceAccess !== undefined \n      ? params.workspaceAccess \n      : { enabled: true, allowedDirectories: [\"in\", \"out\", \"tmp\"] };\n\n    const vaultSecretsList = Array.isArray(params.vaultSecrets) \n      ? params.vaultSecrets \n      : [];\n\n    const finalPlugin = { \n      id: pluginId,\n      uuid: pluginUUID,\n      emoji: params.emoji || \"⚙️\",\n      title: pluginTitle,\n      name: pluginTitle,\n      iconURL: params.iconURL || \"https://api.iconify.design/lucide:blocks.svg\",\n      icon_url: params.iconURL || \"https://api.iconify.design/lucide:blocks.svg\",\n      version: params.version || \"2.0.0\",\n      author: params.author || \"Gemini Chat Hub\",\n      userSettings: finalUserSettings,\n      user_settings: finalUserSettings,\n      pluginFunctions: pluginFunctions,\n      functions: pluginFunctions,\n      contextPrompt: params.contextPrompt || \"\",\n      context_prompt: params.contextPrompt || \"\",\n      localStorage: localStorageConfig,\n      workspaceAccess: workspaceAccessConfig,\n      vaultSecrets: vaultSecretsList,\n      overviewMarkdown: params.overviewMarkdown || (\"# \" + pluginTitle + \"\\n\\nCustom Gemini Chat Hub plugin.\"),\n      authenticationType: \"AUTH_TYPE_NONE\"\n    };\n\n    const jsonString = JSON.stringify(finalPlugin, null, 2);\n    \n    return \"### ⚙️ Gemini Chat Hub Plugin Compiled Successfully!\\n\" +\n      \"Here is the JSON payload for **\" + finalPlugin.title + \"**, ready to import into Gemini Chat Hub.\\n\\n\" +\n      \"#### Capabilities Enabled:\\n\" +\n      \"- 💾 **Persistent Local Storage**: \" + (finalPlugin.localStorage?.enabled ? \"Active (PostgreSQL + Disk Mirroring)\" : \"Disabled\") + \"\\n\" +\n      \"- 🖥️ **Workspace Code Execution Bridge**: \" + (finalPlugin.workspaceAccess?.enabled ? \"Active (/workspace/in, out, tmp)\" : \"Disabled\") + \"\\n\" +\n      \"- 🔑 **Secret Vault Access**: \" + (finalPlugin.vaultSecrets?.length ? finalPlugin.vaultSecrets.join(\", \") : \"None requested\") + \"\\n\" +\n      \"- ⚡ **Node.js VM Execution**: Direct server fetch (Zero CORS restrictions, 90s timeout)\\n\\n\" +\n      \"To install this in Gemini Chat Hub:\\n\" +\n      \"1. Hover over the JSON code block below and click **Copy**.\\n\" +\n      \"2. Open the **Plugins** dialog (click the puzzle/blocks icon in the header or sidebar).\\n\" +\n      \"3. Switch to the **Import Plugin JSON** tab.\\n\" +\n      \"4. Paste the JSON and click **Import and Register Plugin**.\\n\" +\n      \"5. If User Settings or Vault Secrets are configured, click the **Settings** gear to configure them!\\n\\n\" +\n      \"\\n\\n\" +\n      String.fromCharCode(96).repeat(3) + \"json\\n\" + jsonString + \"\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\\n\" +\n      \"---\\n*Compiled using Gemini Chat Hub Plugin Generator.*\n\n  } catch (err) {\n    return \"### ❌ Compilation Error\\nAn error occurred while compiling your plugin:\\n\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\" + err.message + \"\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\";\n  }\n}",
-      "implementationType": "javascript",
-      "output_destination": "markdown",
-      "implementation_type": "javascript"
-    }
-  ],
   "workspaceAccess": {
     "enabled": true,
     "allowedDirectories": [
@@ -1255,5 +25,338 @@
       "tmp"
     ]
   },
-  "overviewMarkdown": "# Gemini Chat Hub Plugin Generator\n\nThis utility dynamically builds, validates, and serializes production-grade custom plugin manifests for **Gemini Chat Hub**.\n\n### Key Features Covered:\n- 💾 **Persistent Local Storage**: Generates schemas and storage helpers (`await storage.get()`, `await storage.set()`) backed by PostgreSQL and disk mirroring.\n- 🖥️ **Workspace Code Execution Bridge**: Bridges data directly to the resident Python IPython kernel, persistent Bash shell, and Polyglot Bun runtime via `workspace.writeFile()`, `workspace.saveData()`, and `workspace.readFile()` in `/workspace/in/`, `/workspace/out/`, and `/workspace/tmp/`.\n- 🔑 **Secret Vault Access**: Integrates with the Secret Vault (`vault.getSecret()`, `vault.listSecrets()`, `{{VAULT:NAME}}`) with automatic active output redaction.\n- ⚡ **Node.js VM Execution**: Zero CORS restrictions, 90-second timeout, native Web and Node globals.\n- 📥 **HTTP Actions with Workspace Auto-Save**: Pipe API responses directly into code execution storage.\n\n### How It Works:\n1. Describe the custom plugin you want to build.\n2. The model calls `compile_gemini_chat_hub_plugin_json` with complete function logic, settings, and permissions.\n3. The tool generates standard RFC 4122 UUIDs, formats the manifest, and renders a ready-to-import JSON code block directly in the chat.\n4. Copy the JSON and paste it into **Plugins** -> **Import Plugin JSON**!"
+  "vaultSecrets": [],
+  "pluginFunctions": [
+    {
+      "id": "fn_compile_gemini_chat_hub_plugin_json",
+      "name": "Compile Gemini Chat Hub Plugin JSON",
+      "implementationType": "javascript",
+      "outputType": "render_markdown",
+      "permissions": [
+        "local_storage",
+        "workspace",
+        "vault",
+        "multimodal"
+      ],
+      "openaiSpec": {
+        "name": "compile_gemini_chat_hub_plugin_json",
+        "description": "Compiles structured user parameters, script logic, and API calls into a perfectly escaped, valid, importable Gemini Chat Hub plugin JSON payload. Supports persistent local storage, code execution workspace bridging (/workspace/in, /workspace/out, /workspace/tmp), Secret Vault integration, mid-turn multimodal returns (images, audio, video), and Node.js VM server-side execution with zero CORS boundaries. IMPORTANT: This function output is rendered directly to the user screen as Markdown. You do NOT need to repeat or duplicate the JSON in your response; simply confirm that it was generated.",
+        "parameters": {
+          "type": "object",
+          "required": [
+            "title",
+            "functions"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Optional unique snake_case identifier for the plugin (e.g. 'crypto_market_pulse'). Defaults to sanitized title."
+            },
+            "title": {
+              "type": "string",
+              "description": "The user-facing title of the custom Gemini Chat Hub plugin."
+            },
+            "emoji": {
+              "type": "string",
+              "description": "A single representative emoji (e.g. '📊', '⚡', '🔍'). Defaults to '⚙️'."
+            },
+            "iconURL": {
+              "type": "string",
+              "description": "Optional URL to an icon image or SVG (e.g. Lucide Iconify URL)."
+            },
+            "version": {
+              "type": "string",
+              "description": "Plugin version string, e.g. '1.0.0'."
+            },
+            "author": {
+              "type": "string",
+              "description": "Plugin author name."
+            },
+            "overviewMarkdown": {
+              "type": "string",
+              "description": "Comprehensive documentation shown in the plugin details modal. Supports Markdown tables, lists, and formatting."
+            },
+            "contextPrompt": {
+              "type": "string",
+              "description": "System instruction context injected persistently into Gemini system prompt whenever this plugin is active. Supports {settingName} variable interpolation."
+            },
+            "localStorage": {
+              "type": "object",
+              "description": "Configure persistent local data storage (backed by PostgreSQL + disk mirroring).",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether persistent key-value local storage is enabled (default: true)."
+                },
+                "initialData": {
+                  "type": "object",
+                  "description": "Optional initial key-value pairs to seed the plugin storage."
+                }
+              }
+            },
+            "workspaceAccess": {
+              "type": "object",
+              "description": "Configure code execution environment workspace bridge (/workspace/in, out, tmp) for inter-op with Python, Bash, and Bun.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether access to the code execution workspace is enabled (default: true)."
+                },
+                "allowedDirectories": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Allowed subdirectories: ['in', 'out', 'tmp']."
+                }
+              }
+            },
+            "vaultSecrets": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of required or recommended Secret Vault keys (e.g. ['GITHUB_PAT', 'EXA_API_KEY'])."
+            },
+            "userSettings": {
+              "type": "array",
+              "description": "User configuration inputs (API keys, custom endpoints, preference toggles) configured in the UI.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Variable key identifier (e.g. 'apiKey', 'baseUrl')."
+                  },
+                  "label": {
+                    "type": "string",
+                    "description": "User-facing label displayed next to the input field."
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "text",
+                      "password",
+                      "number",
+                      "email",
+                      "enum"
+                    ],
+                    "description": "Input field widget type (default: 'text')."
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "description": "Whether the field must be populated to save."
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Sub-label explanatory tooltip or instructions."
+                  },
+                  "placeholder": {
+                    "type": "string",
+                    "description": "Placeholder text inside the empty input box."
+                  },
+                  "defaultValue": {
+                    "type": "string",
+                    "description": "Fallback value if left empty."
+                  },
+                  "enum": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Valid options when type is 'enum'."
+                  },
+                  "vaultSecret": {
+                    "type": "string",
+                    "description": "Suggested Secret Vault key to link/autofill from (e.g. 'GITHUB_PAT')."
+                  }
+                }
+              }
+            },
+            "functions": {
+              "type": "array",
+              "description": "The executable functions/tools provided by this plugin.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "label",
+                  "description",
+                  "implementationType"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "The function identifier in snake_case (e.g. 'fetch_stock_quote')."
+                  },
+                  "label": {
+                    "type": "string",
+                    "description": "User-facing label for the function in the UI."
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Detailed instructions directed at Gemini explaining when and why to trigger this tool."
+                  },
+                  "implementationType": {
+                    "type": "string",
+                    "enum": [
+                      "javascript",
+                      "http"
+                    ],
+                    "description": "Execution method: 'javascript' for Node.js server VM code, or 'http' for declarative web requests."
+                  },
+                  "outputType": {
+                    "type": "string",
+                    "enum": [
+                      "respond_to_ai",
+                      "render_markdown",
+                      "display_html_to_user",
+                      "card"
+                    ],
+                    "description": "Output display destination: 'respond_to_ai' (default: passes to model), 'render_markdown' (skips model, renders markdown), 'display_html_to_user' (interactive HTML canvas), or 'card'."
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Permissions granted to this tool (e.g. [\"local_storage\", \"workspace\", \"vault\", \"multimodal\", \"read_user_message\"])."
+                  },
+                  "parameters": {
+                    "type": "array",
+                    "description": "Function arguments passed by the model.",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "type",
+                        "description"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "description": "Parameter key name in snake_case."
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "string",
+                            "number",
+                            "boolean",
+                            "array",
+                            "object"
+                          ],
+                          "description": "Data type."
+                        },
+                        "required": {
+                          "type": "boolean",
+                          "description": "Whether the parameter is required."
+                        },
+                        "description": {
+                          "type": "string",
+                          "description": "Description and format requirements for the LLM."
+                        },
+                        "itemsType": {
+                          "type": "string",
+                          "description": "If type is 'array', the data type of items (e.g. 'string')."
+                        },
+                        "enum": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Allowed string enum values."
+                        },
+                        "defaultValue": {
+                          "type": "string",
+                          "description": "Default fallback value."
+                        }
+                      }
+                    }
+                  },
+                  "code": {
+                    "type": "string",
+                    "description": "For 'javascript' type: The JavaScript function body. Has access to params, userSettings, resources, storage, workspace, vault, multimodal, fetch, console, timers, etc."
+                  },
+                  "httpUrl": {
+                    "type": "string",
+                    "description": "For 'http' type: Target API URL. Supports {paramName} and {{VAULT:SECRET_NAME}} interpolation."
+                  },
+                  "httpMethod": {
+                    "type": "string",
+                    "enum": [
+                      "GET",
+                      "POST",
+                      "PUT",
+                      "DELETE",
+                      "PATCH"
+                    ],
+                    "description": "HTTP request method."
+                  },
+                  "httpHeaders": {
+                    "type": "string",
+                    "description": "Stringified JSON of request headers, supporting variable/vault interpolation."
+                  },
+                  "httpBody": {
+                    "type": "string",
+                    "description": "Stringified JSON or text of request body, supporting variable/vault interpolation."
+                  },
+                  "requestBodyFormat": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "form-data"
+                    ],
+                    "description": "Body encoding format."
+                  },
+                  "saveToWorkspace": {
+                    "type": "boolean",
+                    "description": "For 'http' type: If true, automatically saves the response payload to /workspace/in for Python or Bash processing. Binary images, audio, and video are automatically encoded and returned as multimodal parts."
+                  },
+                  "workspaceFilename": {
+                    "type": "string",
+                    "description": "Workspace filename template for auto-save (e.g. 'market_data_{timestamp}.json'). Supports variable interpolation."
+                  },
+                  "templateString": {
+                    "type": "string",
+                    "description": "Post-processing template (Handlebars or JMESPath expression)."
+                  },
+                  "transformEngine": {
+                    "type": "string",
+                    "enum": [
+                      "handlebars",
+                      "jmespath"
+                    ],
+                    "description": "Post-processing engine (default: 'handlebars')."
+                  },
+                  "returnsMultimodal": {
+                    "type": "boolean",
+                    "description": "Set to true if this function returns multimodal media (images, audio, video) mid-turn directly to Gemini. Allows the model to dynamically inspect visual or auditory assets."
+                  },
+                  "multimodalTypes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "audio",
+                        "video"
+                      ]
+                    },
+                    "description": "Types of multimodal content returned by this function, e.g. [\"image\", \"video\"]."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "code": "async function compile_gemini_chat_hub_plugin_json(params, userSettings, resources) {\n  function generateUUID() {\n    try {\n      return crypto.randomUUID();\n    } catch (e) {\n      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {\n        const r = Math.random() * 16 | 0;\n        const v = c === 'x' ? r : (r & 0x03 | 0x08);\n        return v.toString(16);\n      });\n    }\n  }\n\n  function ensureString(val) {\n    if (val === undefined || val === null) return \"\";\n    if (typeof val === \"object\") {\n      return JSON.stringify(val, null, 2);\n    }\n    return String(val);\n  }\n\n  try {\n    const pluginTitle = params.title || params.name || \"Custom Plugin\";\n    const pluginId = params.id || pluginTitle.toLowerCase().replace(/[^a-z0-9_]/g, \"_\");\n    const pluginUUID = generateUUID();\n\n    const finalUserSettings = [];\n\n    if (params.userSettings && Array.isArray(params.userSettings)) {\n      params.userSettings.forEach(setting => {\n        const s = {\n          name: setting.name,\n          type: setting.type || \"text\",\n          label: setting.label || setting.name,\n          required: setting.required !== false,\n          description: setting.description || \"\"\n        };\n        if (setting.placeholder) s.placeholder = setting.placeholder;\n        if (setting.type === \"enum\" && (setting.enum || setting.values)) {\n          s.values = setting.enum || setting.values;\n        }\n        if (setting.defaultValue !== undefined) {\n          s.defaultValue = setting.defaultValue;\n        }\n        if (setting.vaultSecret) {\n          s.vaultSecret = setting.vaultSecret;\n        }\n        finalUserSettings.push(s);\n      });\n    }\n\n    const pluginFunctions = [];\n    if (params.functions && Array.isArray(params.functions)) {\n      params.functions.forEach(fn => {\n        const funcUUID = generateUUID();\n        \n        const requiredParams = [];\n        const properties = {};\n        \n        if (fn.parameters && Array.isArray(fn.parameters)) {\n          fn.parameters.forEach(p => {\n            properties[p.name] = {\n              type: p.type || \"string\",\n              description: p.description || \"\"\n            };\n            if (p.type === \"array\" && p.itemsType) {\n              properties[p.name].items = { type: p.itemsType };\n            }\n            if ((p.enum || p.values) && Array.isArray(p.enum || p.values)) {\n              properties[p.name].enum = p.enum || p.values;\n            }\n            if (p.required) {\n              requiredParams.push(p.name);\n            }\n          });\n        }\n\n        const openaiSpec = {\n          name: fn.name,\n          description: fn.description || \"\",\n          parameters: {\n            type: \"object\",\n            properties: properties\n          }\n        };\n\n        if (requiredParams.length > 0) {\n          openaiSpec.parameters.required = requiredParams;\n        }\n\n        const compiledFunc = {\n          id: funcUUID,\n          name: fn.label || fn.name,\n          implementationType: fn.implementationType || \"javascript\",\n          outputType: fn.outputType || \"respond_to_ai\",\n          openaiSpec: openaiSpec,\n          permissions: Array.isArray(fn.permissions) && fn.permissions.length > 0 \n            ? fn.permissions \n            : [\"local_storage\", \"workspace\", \"vault\", \"multimodal\"]\n        };\n\n        if (fn.returnsMultimodal !== undefined || fn.returns_multimodal !== undefined) {\n          compiledFunc.returnsMultimodal = fn.returnsMultimodal !== undefined ? fn.returnsMultimodal : fn.returns_multimodal;\n          compiledFunc.returns_multimodal = compiledFunc.returnsMultimodal;\n        }\n        if (fn.multimodalTypes || fn.multimodal_types) {\n          compiledFunc.multimodalTypes = fn.multimodalTypes || fn.multimodal_types;\n          compiledFunc.multimodal_types = compiledFunc.multimodalTypes;\n        }\n\n        if (fn.implementationType === \"javascript\") {\n          compiledFunc.code = fn.code || \"\";\n        } else if (fn.implementationType === \"http\") {\n          const headersStr = ensureString(fn.httpHeaders);\n          const bodyStr = ensureString(fn.httpBody);\n          const hasHeaders = !!headersStr && headersStr.trim() !== \"\" && headersStr.trim() !== \"{}\";\n          const hasBody = !!bodyStr && bodyStr.trim() !== \"\";\n          \n          compiledFunc.httpAction = {\n            id: generateUUID(),\n            url: fn.httpUrl || \"\",\n            name: \"\",\n            method: (fn.httpMethod || \"GET\").toUpperCase(),\n            hasHeaders: hasHeaders,\n            requestHeaders: hasHeaders ? headersStr : \"\",\n            hasBody: hasBody,\n            requestBody: hasBody ? bodyStr : \"\",\n            requestBodyFormat: fn.requestBodyFormat || \"json\",\n            save_to_workspace: !!fn.saveToWorkspace,\n            workspace_filename: fn.workspaceFilename || \"\"\n          };\n\n          if (fn.templateString) {\n            compiledFunc.httpAction.hasResultTransform = true;\n            compiledFunc.httpAction.resultTransform = {\n              engine: fn.transformEngine || \"handlebars\",\n              templateString: fn.templateString\n            };\n          }\n        }\n\n        pluginFunctions.push(compiledFunc);\n      });\n    }\n\n    const localStorageConfig = params.localStorage !== undefined \n      ? params.localStorage \n      : { enabled: true, initialData: {} };\n\n    const workspaceAccessConfig = params.workspaceAccess !== undefined \n      ? params.workspaceAccess \n      : { enabled: true, allowedDirectories: [\"in\", \"out\", \"tmp\"] };\n\n    const vaultSecretsList = Array.isArray(params.vaultSecrets) \n      ? params.vaultSecrets \n      : [];\n\n    const finalPlugin = { \n      id: pluginId,\n      uuid: pluginUUID,\n      emoji: params.emoji || \"⚙️\",\n      title: pluginTitle,\n      name: pluginTitle,\n      iconURL: params.iconURL || \"https://api.iconify.design/lucide:blocks.svg\",\n      icon_url: params.iconURL || \"https://api.iconify.design/lucide:blocks.svg\",\n      version: params.version || \"2.1.0\",\n      author: params.author || \"Gemini Chat Hub\",\n      userSettings: finalUserSettings,\n      user_settings: finalUserSettings,\n      pluginFunctions: pluginFunctions,\n      functions: pluginFunctions,\n      contextPrompt: params.contextPrompt || \"\",\n      context_prompt: params.contextPrompt || \"\",\n      localStorage: localStorageConfig,\n      workspaceAccess: workspaceAccessConfig,\n      vaultSecrets: vaultSecretsList,\n      overviewMarkdown: params.overviewMarkdown || (\"# \" + pluginTitle + \"\\n\\nCustom Gemini Chat Hub plugin.\"),\n      authenticationType: \"AUTH_TYPE_NONE\"\n    };\n\n    const jsonString = JSON.stringify(finalPlugin, null, 2);\n    const hasMultimodal = pluginFunctions.some(f => f.returnsMultimodal || (f.permissions && f.permissions.includes(\"multimodal\")));\n\n    return \"### ⚙️ Gemini Chat Hub Plugin Compiled Successfully!\\n\" +\n      \"Here is the JSON payload for **\" + finalPlugin.title + \"**, ready to import into Gemini Chat Hub.\\n\\n\" +\n      \"#### Capabilities Enabled:\\n\" +\n      \"- 💾 **Persistent Local Storage**: \" + (finalPlugin.localStorage?.enabled ? \"Active (PostgreSQL + Disk Mirroring)\" : \"Disabled\") + \"\\n\" +\n      \"- 🖥️ **Workspace Code Execution Bridge**: \" + (finalPlugin.workspaceAccess?.enabled ? \"Active (/workspace/in, out, tmp)\" : \"Disabled\") + \"\\n\" +\n      \"- 🔑 **Secret Vault Access**: \" + (finalPlugin.vaultSecrets?.length ? finalPlugin.vaultSecrets.join(\", \") : \"None requested\") + \"\\n\" +\n      \"- 🎨 **Mid-Turn Multimodal Outputs**: \" + (hasMultimodal ? \"Active (Images, Audio, Video mid-turn returns)\" : \"Supported via multimodal helper\") + \"\\n\" +\n      \"- ⚡ **Node.js VM Execution**: Direct server fetch (Zero CORS restrictions, 90s timeout)\\n\\n\" +\n      \"To install this in Gemini Chat Hub:\\n\" +\n      \"1. Hover over the JSON code block below and click **Copy**.\\n\" +\n      \"2. Open the **Plugins** dialog (click the puzzle/blocks icon in the header or sidebar).\\n\" +\n      \"3. Switch to the **Import Plugin JSON** tab.\\n\" +\n      \"4. Paste the JSON and click **Import and Register Plugin**.\\n\" +\n      \"5. If User Settings or Vault Secrets are configured, click the **Settings** gear to configure them!\\n\\n\" +\n      \"\\n\\n\" +\n      String.fromCharCode(96).repeat(3) + \"json\\n\" + jsonString + \"\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\\n\" +\n      \"---\\n*Compiled using Gemini Chat Hub Plugin Generator.*\";\n\n  } catch (err) {\n    return \"### ❌ Compilation Error\\nAn error occurred while compiling your plugin:\\n\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\" + err.message + \"\\n\" + String.fromCharCode(96).repeat(3) + \"\\n\";\n  }\n}"
+    }
+  ],
+  "overviewMarkdown": "# Gemini Chat Hub Plugin Generator\n\nThis utility dynamically builds, validates, and serializes production-grade custom plugin manifests for **Gemini Chat Hub**.\n\n### Key Features Covered:\n- 🎨 **Mid-Turn Multimodal Outputs**: Return images, audio, and video directly to Gemini mid-conversation using `multimodal.image()`, `multimodal.audio()`, `multimodal.video()`, `multimodal.fromWorkspace()`, or binary HTTP responses. Enables Gemini to dynamically inspect visual charts, audio clips, or video files mid-turn.\n- 💾 **Persistent Local Storage**: Generates schemas and storage helpers (`await storage.get()`, `await storage.set()`) backed by PostgreSQL and disk mirroring.\n- 🖥️ **Workspace Code Execution Bridge**: Bridges data directly to the resident Python IPython kernel, persistent Bash shell, and Polyglot Bun runtime via `workspace.writeFile()`, `workspace.saveData()`, and `workspace.readFile()` in `/workspace/in/`, `/workspace/out/`, and `/workspace/tmp/`.\n- 🔑 **Secret Vault Access**: Integrates with the Secret Vault (`vault.getSecret()`, `vault.listSecrets()`, `{{VAULT:NAME}}`) with automatic active output redaction.\n- ⚡ **Node.js VM Execution**: Zero CORS restrictions, 90-second timeout, native Web and Node globals.\n- 📥 **HTTP Actions with Workspace Auto-Save**: Pipe API responses directly into code execution storage, with native binary media conversion for multimodal tools.\n\n### How It Works:\n1. Describe the custom plugin you want to build.\n2. The model calls `compile_gemini_chat_hub_plugin_json` with complete function logic, settings, and permissions.\n3. The tool generates standard RFC 4122 UUIDs, formats the manifest, and renders a ready-to-import JSON code block directly in the chat.\n4. Copy the JSON and paste it into **Plugins** -> **Import Plugin JSON**!",
+  "authenticationType": "AUTH_TYPE_NONE"
 }
