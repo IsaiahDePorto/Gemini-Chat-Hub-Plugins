@@ -163,7 +163,7 @@
       ],
       "openaiSpec": {
         "name": "natural_language_search",
-        "description": "CRITICAL GROUNDING TOOL (v3.0): Executes multi-engine web search (Exa + Brave RRF), native multimodal PDF & spreadsheet hydration, calibrated 12/12 Gemini Decision 1 SIFT provenance auditing, post-synthesis claim entailment gating, verbatim substring verification, and conditional Hop-2 falsification. Express your retrieval objective as a complete, descriptive natural language sentence.",
+        "description": "CRITICAL GROUNDING TOOL (v3.0): Executes multi-engine web search (Exa + Brave RRF), native multimodal PDF & spreadsheet hydration, calibrated 12/12 Gemini Decision 1 SIFT provenance auditing, post-synthesis claim entailment gating, verbatim substring verification, and conditional Hop-2 falsification. QUERY FORMULATION PROTOCOL: (1) For high-stakes facts, policy, finance, or current events, write a dense, hyper-specific objective naming exact entities, date bounds, and target primary sources/domains (e.g., official releases, .gov, peer-reviewed papers) to maximize SIFT weight and filter aggregators. (2) For multi-point synthesis or academic literature, use a structured descriptive sentence with concrete methodological keywords (e.g., fMRI, EEG, Article 113) to prevent hydration timeouts. (3) For known software errors, pass the verbatim error string plus stack/version keywords. RESTRICTION: DO NOT submit open-ended conversational questions (e.g., 'What happened with X?'), which dilute retrieval focus and degrade SIFT and entailment scores.",
         "parameters": {
           "type": "object",
           "required": [
